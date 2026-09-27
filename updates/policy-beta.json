@@ -1,0 +1,6 @@
+{
+  "channel": "beta",
+  "policyRevision": 1,
+  "maxForcedVersionCode": 0,
+  "reason": "初始策略：仅提供可选更新，不强制升级"
+}

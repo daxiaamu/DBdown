@@ -1,0 +1,344 @@
+package com.daxiaamu.dbdown
+
+import android.app.*
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.media.MediaCodec
+import android.media.MediaExtractor
+import android.media.MediaFormat
+import androidx.media3.muxer.MediaMuxerCompat as MediaMuxer
+import android.net.Uri
+import android.os.Environment
+import android.os.IBinder
+import android.provider.MediaStore
+import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import java.util.concurrent.ConcurrentHashMap
+import okhttp3.Call
+import okhttp3.Request
+import java.io.File
+import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
+
+class DownloadService : Service() {
+    companion object {
+        const val CHANNEL = "download_progress"
+        const val RESULTS = "download_results"
+        fun start(context: Context) = context.startForegroundService(Intent(context, DownloadService::class.java))
+        fun pause(context: Context) = context.startForegroundService(Intent(context, DownloadService::class.java).setAction("pause"))
+        fun resume(context: Context) = context.startForegroundService(Intent(context, DownloadService::class.java).setAction("resume"))
+        fun cancel(context: Context, id: String) =
+            context.startService(Intent(context, DownloadService::class.java).setAction("cancel").putExtra("id", id))
+    }
+    private val store get() = (application as DownloaderApp).store
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var observer: Job? = null
+    private lateinit var queue: DownloadQueue
+    private val calls = ConcurrentHashMap<String, MutableSet<Call>>()
+    private var lastStartId = 0
+    private val transferClient = VideoResolver.client.newBuilder().callTimeout(0, TimeUnit.SECONDS).build()
+    private val notifications get() = getSystemService(NotificationManager::class.java)
+
+    override fun onCreate() {
+        super.onCreate()
+        notifications.createNotificationChannel(NotificationChannel(CHANNEL, "下载进度", NotificationManager.IMPORTANCE_LOW))
+        notifications.createNotificationChannel(NotificationChannel(RESULTS, "下载结果", NotificationManager.IMPORTANCE_DEFAULT))
+    }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        lastStartId = startId
+        startForeground(1, notification("下载队列", "正在准备下载"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        if(!::queue.isInitialized) queue = DownloadQueue(scope,
+            candidates = { store.tasks.value.asReversed().filter { it.status == TaskStatus.QUEUED }.map { it.id } },
+            limit = { store.parallelism.value }, paused = { store.paused.value },
+            perform = { id -> store.get(id)?.let { perform(it) } }, cancelCalls = ::cancelCalls,
+            idle = { stopForeground(STOP_FOREGROUND_REMOVE); stopSelfResult(lastStartId) })
+        when(intent?.action) {
+            "pause" -> { store.pauseAll(); queue.pause() }
+            "resume" -> store.resumeAll()
+            "cancel" -> intent.getStringExtra("id")?.let { id ->
+                store.update(id) { if(it.status.pending) it.copy(status = TaskStatus.CANCELLED, speed = 0) else it }
+                queue.cancel(id)
+            }
+        }
+        if(observer == null) observer = scope.launch {
+            combine(store.tasks.map { list -> list.map { it.id to it.status } }.distinctUntilChanged(),
+                store.parallelism, store.paused) { _, _, _ -> Unit }.collect { queue.refresh() }
+        }
+        queue.refresh()
+        return START_NOT_STICKY
+    }
+    private fun trackCall(id: String, call: Call, job: Job?) {
+        calls.computeIfAbsent(id) { ConcurrentHashMap.newKeySet() }.add(call)
+        if(job?.isActive != true || store.get(id)?.status?.active != true) call.cancel()
+    }
+    private fun cancelCalls(id: String) { calls[id]?.forEach { it.cancel() } }
+    private suspend fun perform(task: DownloadTask) {
+        val dir = File(cacheDir, "download-${task.id}").apply { mkdirs() }
+        val worker = currentCoroutineContext()[Job]
+        try {
+            state(task.id, TaskStatus.RESOLVING)
+            val link = Links.detect(task.source) ?: error("链接不受支持")
+            val info = VideoResolver { trackCall(task.id, it, worker) }.resolve(link)
+            currentCoroutineContext().ensureActive()
+            if(!store.claim(task.id, info)) throw CancellationException("Task no longer active")
+            withContext(Dispatchers.IO) {
+                state(task.id, TaskStatus.DOWNLOADING)
+                if(info.images.isNotEmpty()) { downloadAlbum(task, info, dir); return@withContext }
+                val wholeTotal = if(info.audio != null) coroutineScope {
+                    val videoSize = async { probeSize(info.video, info, task.id, worker) }
+                    val audioSize = async { probeSize(info.audio, info, task.id, worker) }
+                    val v = videoSize.await(); val a = audioSize.await()
+                    if(v > 0 && a > 0) v + a else -1L
+                } else -1L
+                val video = File(dir, "video.mp4")
+                download(info.video, video, info, task.id, 0L, info.audio != null, wholeTotal)
+                val output = if(info.audio != null) {
+                    val audio = File(dir, "audio.m4a")
+                    download(info.audio, audio, info, task.id, video.length(), false)
+                    state(task.id, TaskStatus.MERGING)
+                    File(dir, "merged.mp4").also { mux(video, audio, it) }
+                } else video
+                validateVideo(output)
+                state(task.id, TaskStatus.SAVING)
+                val uri = publish(output, info.title, task.id)
+                store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(),
+                    bytes = output.length(), total = output.length(), speed = 0, error = "") }
+                notifyResult(task.id, info.title, "已保存到 Movies/逗逼下载器", uri)
+            }
+        } catch(e: CancellationException) {
+            throw e
+        } catch(e: Exception) {
+            currentCoroutineContext().ensureActive()
+            if(applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE != 0) android.util.Log.e("DBDownload", "Download failed", e)
+            if(store.get(task.id)?.status?.active == true) {
+                val message = when(e) {
+                    is java.net.UnknownHostException -> "网络不可用，请联网后重试"
+                    is java.net.SocketTimeoutException -> "连接超时，请稍后重试"
+                    is org.json.JSONException -> "平台返回的数据格式发生变化，请稍后重试"
+                    else -> e.message?.take(180) ?: "下载失败，请重试"
+                }
+                store.update(task.id) { it.copy(status = TaskStatus.FAILED, error = message, speed = 0) }
+                notifyResult(task.id, store.get(task.id)?.title ?: "下载失败", message)
+            }
+        } finally {
+            calls.remove(task.id)
+            withContext(NonCancellable + Dispatchers.IO) {
+                if(store.get(task.id)?.status !in setOf(TaskStatus.PAUSED, TaskStatus.QUEUED)) dir.deleteRecursively()
+            }
+        }
+    }
+    private suspend fun downloadAlbum(task: DownloadTask, info: VideoInfo, dir: File) {
+        var downloaded = 0L
+        val files = info.images.mapIndexed { index, url ->
+            currentCoroutineContext().ensureActive()
+            val file = File(dir, "image-$index")
+            download(url, file, info, task.id, downloaded, index != info.images.lastIndex || task.albumMode == AlbumMode.VIDEO)
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "第 ${index + 1} 张图片下载不完整" }
+            downloaded += file.length()
+            file
+        }
+        if(task.albumMode == AlbumMode.VIDEO) {
+            val music = info.music?.let { url -> File(dir, "music.mp3").also { download(url, it, info, task.id, downloaded, false) } }
+            state(task.id, TaskStatus.MERGING)
+            val output = File(dir, "album.mp4")
+            AlbumExporter.export(this, files, music, output)
+            validateVideo(output)
+            state(task.id, TaskStatus.SAVING)
+            val uri = publish(output, info.title, task.id)
+            store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(), outputUris = listOf(uri.toString()),
+                mimeType = "video/mp4", bytes = output.length(), total = output.length(), speed = 0, error = "") }
+            notifyResult(task.id, info.title, "图集视频已保存到 Movies/逗逼下载器", uri)
+            return
+        }
+        state(task.id, TaskStatus.SAVING)
+        val published = mutableListOf<Uri>()
+        try {
+            files.forEachIndexed { index, file ->
+                currentCoroutineContext().ensureActive()
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+                val mime = bounds.outMimeType ?: error("无法识别图片格式")
+                val extension = when(mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; "image/heif", "image/heic" -> "heic"; "image/avif" -> "avif"; else -> error("暂不支持此图片格式") }
+                published += publish(file, info.title, "${task.id.take(8)}-${(index+1).toString().padStart(3, '0')}", mime, extension, true)
+            }
+            currentCoroutineContext().ensureActive()
+            store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = published.first().toString(),
+                outputUris = published.map(Uri::toString), mimeType = "image/*", bytes = downloaded, total = downloaded, speed = 0, error = "") }
+        } catch(e: Exception) {
+            // A cancelled/failed set must not leave a partially published album before retrying.
+            published.forEach { runCatching { contentResolver.delete(it, null, null) } }
+            throw e
+        }
+        notifyResult(task.id, info.title, "${files.size} 张图片已保存到 Pictures/逗逼下载器", published.first())
+    }
+    private suspend fun state(id: String, status: TaskStatus) {
+        currentCoroutineContext().ensureActive()
+        store.update(id) { if(it.status.active) it.copy(status = status, speed = 0) else it }
+        notifyProgress()
+    }
+    private fun probeSize(url: String, info: VideoInfo, id: String, job: Job?): Long = runCatching {
+        val probe = VideoResolver.client.newBuilder().callTimeout(8, TimeUnit.SECONDS).retryOnConnectionFailure(false).build()
+        probe.newCall(Request.Builder().url(url).head().header("User-Agent", info.userAgent)
+            .header("Referer", info.referer).header("Accept-Encoding", "identity").build()).also { trackCall(id, it, job) }.execute().use {
+            if(it.isSuccessful) it.header("Content-Length")?.toLongOrNull() ?: -1L else -1L
+        }
+    }.getOrDefault(-1L)
+
+    private suspend fun download(url: String, file: File, info: VideoInfo, id: String, base: Long, hasNext: Boolean, wholeTotal: Long = -1L) {
+        val worker = currentCoroutineContext()[Job]
+        ResumableTransfer(transferClient) { trackCall(id, it, worker) }.download(url, file,
+            info.id + "|" + info.quality, info.userAgent, info.referer) { bytes, length, speed ->
+            val total = if(length >= 0 && !hasNext) base + length else wholeTotal
+            store.update(id, save = speed == 0L) {
+                if(it.status == TaskStatus.DOWNLOADING) it.copy(bytes = base + bytes, total = total, speed = speed) else it
+            }
+            notifyProgress()
+        }
+    }
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private suspend fun mux(video: File, audio: File, output: File) {
+        val extractors = listOf(MediaExtractor(), MediaExtractor())
+        val muxer = MediaMuxer(output.absolutePath, MediaMuxer.OUTPUT_FORMAT_MP4)
+        var started = false
+        try {
+            val tracks = extractors.mapIndexed { index, extractor ->
+                extractor.setDataSource(if(index == 0) video.absolutePath else audio.absolutePath)
+                val type = if(index == 0) "video/" else "audio/"
+                val track = (0 until extractor.trackCount).firstOrNull {
+                    extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith(type) == true
+                } ?: error("下载的音视频轨道不完整")
+                extractor.selectTrack(track)
+                val format = extractor.getTrackFormat(track)
+                Triple(extractor, muxer.addTrack(format), format)
+            }
+            muxer.start(); started = true
+            // Interleave tracks: writing all video before any audio can exhaust the
+            // platform muxer's track queues. Preserve sample order within each track.
+            val capacity = tracks.maxOf { (_, _, format) ->
+                if(format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE))
+                    maxOf(8 * 1024 * 1024, format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE))
+                else 8 * 1024 * 1024
+            }
+            val buffer = ByteBuffer.allocateDirect(capacity)
+            val bufferInfo = MediaCodec.BufferInfo()
+            val audioTimestamps = AudioTimestamps()
+            while(true) {
+                currentCoroutineContext().ensureActive()
+                val next = tracks.filter { it.first.sampleTime >= 0L }.minByOrNull { it.first.sampleTime } ?: break
+                val (extractor, track, format) = next
+                buffer.clear()
+                val size = extractor.readSampleData(buffer, 0)
+                if(size < 0) { extractor.unselectTrack(extractor.sampleTrackIndex); continue }
+                check(size <= capacity) { "视频帧大小超出支持范围" }
+                val sampleTime = if(format.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true)
+                    audioTimestamps.next(extractor.sampleTime) else extractor.sampleTime
+                bufferInfo.set(0, size, sampleTime,
+                    if(extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+                muxer.writeSampleData(track, buffer, bufferInfo)
+                extractor.advance()
+            }
+            muxer.stop(); started = false
+        } finally {
+            if(started) runCatching { muxer.stop() }
+            muxer.release()
+            extractors.forEach { it.release() }
+        }
+    }
+    private fun validateVideo(file: File) {
+        val extractor = MediaExtractor()
+        try {
+            extractor.setDataSource(file.absolutePath)
+            check((0 until extractor.trackCount).any {
+                extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true
+            }) { "服务器返回的文件不是可播放视频" }
+        } finally { extractor.release() }
+    }
+    private suspend fun publish(file: File, title: String, id: String, mime: String = "video/mp4", extension: String = "mp4", image: Boolean = false): Uri {
+        val clean = mediaBaseName(title)
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, "$clean-${id.take(12)}.$extension")
+            put(MediaStore.Video.Media.MIME_TYPE, mime)
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${if(image) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES}/逗逼下载器")
+            put(MediaStore.Video.Media.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(if(image) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: error("无法创建视频文件")
+        try {
+            contentResolver.openOutputStream(uri)?.use { output ->
+                file.inputStream().use { input ->
+                    val buffer = ByteArray(128*1024)
+                    while(true) {
+                        currentCoroutineContext().ensureActive()
+                        val n = input.read(buffer)
+                        if(n < 0) break
+                        output.write(buffer, 0, n)
+                    }
+                }
+            } ?: error("无法写入视频文件")
+            currentCoroutineContext().ensureActive()
+            values.clear(); values.put(MediaStore.Video.Media.IS_PENDING, 0)
+            check(contentResolver.update(uri, values, null, null) == 1) { "无法完成视频保存" }
+            return uri
+        } catch(e: Exception) {
+            contentResolver.delete(uri, null, null)
+            throw e
+        }
+    }
+    private fun notification(title: String, text: String, progress: Int = -1): Notification {
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java).putExtra("downloads", true),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val builder = NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_download)
+            .setContentTitle(title).setContentText(text).setContentIntent(open).setOnlyAlertOnce(true).setOngoing(true)
+            .setProgress(100, progress.coerceAtLeast(0), progress < 0)
+        val pause = PendingIntent.getService(this, 1, Intent(this, DownloadService::class.java).setAction("pause"),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        builder.addAction(0, "全部暂停", pause)
+        return builder.build()
+    }
+    private fun notifyProgress() {
+        if(store.paused.value) return
+        val active = store.tasks.value.filter { it.status.active && it.status != TaskStatus.QUEUED }
+        val waiting = store.tasks.value.count { it.status == TaskStatus.QUEUED }
+        val speed = active.sumOf { it.speed }
+        val text = "${active.size} 个进行中 · $waiting 个等待 · ${formatBytes(speed)}/s"
+        runCatching { notifications.notify(1, notification("下载队列", text)) }
+    }
+    private fun notifyResult(id: String, title: String, message: String, uri: Uri? = null) {
+        val intent = Intent(this, MainActivity::class.java).putExtra("downloads", true)
+        val pending = PendingIntent.getActivity(this, id.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        runCatching { notifications.notify(id.hashCode(), NotificationCompat.Builder(this, RESULTS)
+            .setSmallIcon(R.drawable.ic_download).setContentTitle(title).setContentText(message).setAutoCancel(true)
+            .setContentIntent(pending).build()) }
+    }
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        store.tasks.value.filter { it.status.active }.forEach { t ->
+            store.update(t.id) { it.copy(status = TaskStatus.INTERRUPTED, error = "系统后台下载时限已到，请回到应用重试", speed = 0) }
+        }
+        if(::queue.isInitialized) queue.close()
+        stopSelf()
+    }
+    override fun onDestroy() {
+        if(::queue.isInitialized) queue.close()
+        store.tasks.value.filter { it.status.active }.forEach { task ->
+            store.update(task.id) { if(it.status.active) it.copy(status = TaskStatus.INTERRUPTED, speed = 0,
+                error = "下载服务已停止，请重试") else it }
+        }
+        scope.cancel()
+        calls.keys.toList().forEach(::cancelCalls)
+        super.onDestroy()
+    }
+    override fun onBind(intent: Intent?): IBinder? = null
+}
+fun formatBytes(bytes: Long): String = when {
+    bytes < 0 -> "大小未知"
+    bytes >= 1024L*1024*1024 -> "%.2f GB".format(bytes.toDouble()/(1024*1024*1024))
+    bytes >= 1024L*1024 -> "%.1f MB".format(bytes.toDouble()/(1024*1024))
+    bytes >= 1024 -> "%.0f KB".format(bytes.toDouble()/1024)
+    else -> "$bytes B"
+}

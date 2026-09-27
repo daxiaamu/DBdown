@@ -1,0 +1,47 @@
+name: Generate verified update metadata
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published Release tag to verify
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: dbdown-update-metadata
+  cancel-in-progress: false
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: android-actions/setup-android@v3
+      - name: Install APK inspection tools
+        run: sdkmanager "build-tools;36.0.0"
+      - name: Verify APK and generate immutable manifest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPDATE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          UPDATE_REPOSITORY: ${{ github.repository }}
+          UPDATE_BRANCH: main
+        run: python scripts/publish_update.py
+      - name: Commit generated metadata atomically
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates/stable updates/beta
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Publish verified update metadata"
+          git pull --rebase origin main
+          python scripts/publish_update.py --validate-only
+          git push origin HEAD:main
