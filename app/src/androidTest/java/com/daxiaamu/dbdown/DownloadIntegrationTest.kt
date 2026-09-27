@@ -96,4 +96,23 @@ class DownloadIntegrationTest {
             screenshot.recycle()
         }
     }
+    @Test fun userFailedVideoReparsesAndDownloadsOnRetry() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            lateinit var vm: MainViewModel
+            var id = ""
+            scenario.onActivity {
+                vm = ViewModelProvider(it)[MainViewModel::class.java]
+                val task = vm.store.tasks.value.first { t -> t.key == "dy:7685937709583519022" }
+                id = task.id
+                if(task.status == TaskStatus.PAUSED) vm.resumeDownloads() else if(!task.status.active && task.status != TaskStatus.COMPLETED) vm.retry(id)
+                vm.tab = 1
+            }
+            val deadline = System.currentTimeMillis() + 600000
+            while(vm.store.get(id)?.status?.active == true && System.currentTimeMillis() < deadline) Thread.sleep(500)
+            val task = vm.store.get(id)!!
+            assertEquals(task.error, TaskStatus.COMPLETED, task.status)
+            assertTrue(task.bytes > 0)
+        }
+    }
+
 }

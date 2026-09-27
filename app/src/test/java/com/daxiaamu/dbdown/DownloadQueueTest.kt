@@ -54,4 +54,19 @@ class DownloadQueueTest {
         assertEquals(listOf("a", "b", "c", "a", "b", "c"), starts)
         queue.close()
     }
+    @Test fun deletingWaitsUntilCancelledWorkerHasReleasedItsFiles() = runTest {
+        val pending = mutableListOf("a")
+        val cleanup = CompletableDeferred<Unit>()
+        var cleaned = false
+        val queue = DownloadQueue(backgroundScope, { pending.toList() }, { 1 }, { false }, { id ->
+            pending.remove(id)
+            try { awaitCancellation() } finally { withContext(NonCancellable) { cleanup.await(); cleaned = true } }
+        }, {}, {})
+        queue.refresh(); runCurrent()
+        val deletion = async { queue.cancelAndJoin(listOf("a")); assertTrue(cleaned) }
+        runCurrent(); assertFalse(deletion.isCompleted)
+        cleanup.complete(Unit); runCurrent(); deletion.await()
+        queue.close()
+    }
+
 }

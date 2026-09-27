@@ -37,6 +37,11 @@ internal class DownloadQueue(
     fun contains(id: String) = id in workers
     fun refresh() { if(!closed) changes.trySend(Unit) }
     fun cancel(id: String) { workers[id]?.cancel(); cancelCalls(id); refresh() }
+    suspend fun cancelAndJoin(ids: List<String>) {
+        val pending = ids.mapNotNull { workers[it] }
+        ids.forEach(::cancel)
+        pending.joinAll()
+    }
     fun pause() { workers.keys.toList().forEach(::cancel); refresh() }
     fun close() { closed = true; workers.keys.toList().forEach(::cancel); changes.close() }
 }

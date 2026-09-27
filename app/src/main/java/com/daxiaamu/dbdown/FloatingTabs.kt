@@ -24,7 +24,6 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -44,7 +43,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
 }
 
 @Composable internal fun FloatingTabs(
-    pager: PagerState, count: Int, modifier: Modifier = Modifier, onSelect: (Int) -> Unit
+    pager: PagerState, modifier: Modifier = Modifier, onSelect: (Int) -> Unit
 ) {
     val density = LocalDensity.current
     val travel = with(density) { 118.dp.toPx() }
@@ -83,7 +82,6 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
                         Glyph(if(index == 0) "home" else "download", tint = tint)
                         Text(label, style = MaterialTheme.typography.labelLarge, color = tint)
-                        if(index == 1 && count > 0) Text(if(count > 99) "99+" else "$count", fontSize = 10.sp, color = tint)
                     }
                 }
             }

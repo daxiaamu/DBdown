@@ -61,23 +61,23 @@ class QueueControlsTest {
         try {
             rule.onNodeWithTag("queueControl").performClick()
             rule.waitUntil(10000) { vm.store.paused.value }
-            rule.onNodeWithText("全部继续").assertExists()
+            rule.onNodeWithContentDescription("全部开始").assertExists()
             rule.runOnIdle { assertEquals(TaskStatus.PAUSED, vm.store.get(id)!!.status) }
             rule.activityRule.scenario.recreate()
             rule.waitForIdle()
-            rule.onNodeWithText("全部继续").assertExists()
+            rule.onNodeWithContentDescription("全部开始").assertExists()
             // Cancel only the fixture before resuming, keeping this test independent of platform APIs.
             rule.runOnIdle { vm.cancel(id) }
             rule.waitUntil(10000) { vm.store.get(id)?.status == TaskStatus.CANCELLED }
             rule.onNodeWithTag("queueControl").performClick()
             rule.waitUntil(10000) { !vm.store.paused.value }
             rule.waitForIdle()
-            rule.waitUntil(10000) { runCatching { rule.onNodeWithText("全部暂停").assertExists() }.isSuccess }
+            rule.waitUntil(10000) { runCatching { rule.onNodeWithContentDescription("全部暂停").assertExists() }.isSuccess }
             rule.runOnIdle { vm.settings = true }
             rule.onNodeWithTag("parallelismSetting").performClick()
             rule.onNodeWithText("2 个任务").performClick()
             rule.runOnIdle { assertEquals(2, vm.store.parallelism.value); vm.settings = false }
-            rule.onNodeWithText("最多同时下载 2 个任务").assertExists()
+            rule.onNodeWithText("最多同时下载 2 个任务").assertDoesNotExist()
         } finally {
             settings.edit().putBoolean("notificationAsked", asked).apply()
             rule.runOnIdle {

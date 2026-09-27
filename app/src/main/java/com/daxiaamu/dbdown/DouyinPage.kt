@@ -33,9 +33,19 @@ internal object DouyinPage {
             return VideoInfo(canonical, "dy:$id", title, "", quality = "${urls.size} 张图片",
                 referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, images = urls, music = music)
         }
-        val url = firstUrl(play?.optJSONArray("url_list")) ?: error("没有可用的视频地址")
-        return VideoInfo(link, "dy:$id", title, url.replace("/playwm/", "/play/"), quality = "原视频",
-            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE)
+        val urls = play?.optJSONArray("url_list") ?: error("没有可用的视频地址")
+        val originals = (0 until urls.length()).mapNotNull { validUrl(urls.optString(it)) }
+            .map { it.replace("/playwm/", "/play/") }.distinct()
+        check(originals.isNotEmpty()) { "没有可用的视频地址" }
+        // Official web play entry may route to a different media CDN than the mobile API.
+        val alternates = originals.mapNotNull { raw ->
+            val url = raw.toHttpUrlOrNull()!!
+            if(url.host == "aweme.snssdk.com" && url.encodedPath == "/aweme/v1/play/")
+                url.newBuilder().host("www.douyin.com").build().toString() else null
+        }
+        val candidates = (alternates + originals).distinct()
+        return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "原视频",
+            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1))
     }
     private fun firstUrl(array: JSONArray?): String? = array?.let {
         (0 until it.length()).firstNotNullOfOrNull { i -> validUrl(it.optString(i)) }

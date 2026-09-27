@@ -81,6 +81,8 @@ private val paths = mapOf(
     "back" to "M15,5 L8,12 L15,19",
     "check" to "M5,12 L10,17 L20,7",
     "share" to "M8.5,10.5 L15.5,6.5 M8.5,13.5 L15.5,17.5 M9,12 A3,3 0,1 1,3,12 A3,3 0,1 1,9,12 M21,5 A3,3 0,1 1,15,5 A3,3 0,1 1,21,5 M21,19 A3,3 0,1 1,15,19 A3,3 0,1 1,21,19",
+    "pause" to "M8,5 L8,19 M16,5 L16,19",
+    "trash" to "M4,6 L20,6 M9,6 L9,3 L15,3 L15,6 M6,6 L7,21 L17,21 L18,6 M10,10 L10,17 M14,10 L14,17",
     "play" to "M8,5 L19,12 L8,19 Z",
     "retry" to "M4,10 A8,8 0,1 1,5,18 M4,4 L4,10 L10,10",
     "more" to "M12,4 L12,5 M12,11 L12,12 M12,18 L12,19",
@@ -154,7 +156,7 @@ private val paths = mapOf(
                 }
             }
             if(!vm.settings) {
-                FloatingTabs(pager, tasks.count { it.status.active },
+                FloatingTabs(pager,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
             AnimatedVisibility(vm.clipboardSuggestion != null && !vm.inputVisible,
@@ -187,6 +189,7 @@ private val paths = mapOf(
         }
     }
     if(vm.inputVisible) LinkDialog(vm) { if(vm.submit()) requestNotifications() }
+    DeleteTasksDialog(vm)
     com.daxiaamu.dbdown.update.UpdateOverlay()
 }
 
@@ -242,7 +245,6 @@ private val paths = mapOf(
         }
     }
     val paused by vm.store.paused.collectAsStateWithLifecycle()
-    val parallelism by vm.store.parallelism.collectAsStateWithLifecycle()
     val filtered = when(filter) {
         1 -> tasks.filter { it.status.pending }
         2 -> tasks.filter { it.status == TaskStatus.COMPLETED }
@@ -250,15 +252,15 @@ private val paths = mapOf(
     }
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if(paused) "下载已暂停" else "最多同时下载 $parallelism 个任务",
-                modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FilledTonalButton(onClick = {
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+            FilledTonalIconButton(onClick = {
                 if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
-            }, enabled = paused || tasks.any { it.status.active }, shape = CircleShape,
-                modifier = Modifier.testTag("queueControl")) {
-                Text(if(paused) "全部继续" else "全部暂停")
+            }, enabled = !vm.deleting && (paused || tasks.any { it.status.active }), modifier = Modifier.size(48.dp).testTag("queueControl")) {
+                Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
+            }
+            FilledTonalIconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
+                enabled = !vm.deleting && tasks.isNotEmpty(), modifier = Modifier.size(48.dp).testTag("clearDownloads")) {
+                Glyph("trash", "清空下载记录")
             }
         }
         Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -303,15 +305,18 @@ private val paths = mapOf(
                     Text(task.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 Box {
-                    IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) { Glyph("more", "更多操作") }
+                    IconButton(onClick = { menu = true }, enabled = !vm.deleting, modifier = Modifier.size(36.dp)) { Glyph("more", "更多操作") }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("查看原作品") }, onClick = {
                             menu = false
                             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(task.source))) }
                                 .onFailure { vm.notice = "没有可以打开链接的应用" }
                         })
-                        if(!task.status.pending) DropdownMenuItem(text = { Text("移除记录（保留文件）") }, onClick = {
-                            menu = false; vm.store.remove(task.id)
+                        DropdownMenuItem(text = { Text("删除任务") }, onClick = {
+                            menu = false; vm.requestDelete(listOf(task.id), withFiles = false)
+                        })
+                        DropdownMenuItem(text = { Text("删除任务和文件") }, onClick = {
+                            menu = false; vm.requestDelete(listOf(task.id), withFiles = true)
                         })
                     }
                 }
@@ -333,7 +338,7 @@ private val paths = mapOf(
                     }
                 }
                 if(task.status.pending) {
-                    TextButton(onClick = { vm.cancel(task.id) }) { Text("取消") }
+                    TextButton(onClick = { vm.cancel(task.id) }, enabled = !vm.deleting) { Text("取消") }
                 } else if(task.status == TaskStatus.COMPLETED) {
                     FilledTonalIconButton(onClick = {
                         runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(task.uri), task.mimeType)
@@ -366,12 +371,39 @@ private val paths = mapOf(
                         }
                     }, enabled = !sharing, modifier = Modifier.size(48.dp)) { Glyph("share", if(task.mimeType.startsWith("image/")) "分享图片" else "分享视频") }
                 } else {
-                    TextButton(onClick = { vm.retry(task.id); requestNotifications() }) { Text("重试") }
+                    TextButton(onClick = { vm.retry(task.id); requestNotifications() }, enabled = !vm.deleting) { Text("重试") }
                 }
             }
         }
     }
 }
+@Composable private fun DeleteTasksDialog(vm: MainViewModel) {
+    val request = vm.deleteRequest ?: return
+    val files = request.withFiles == true
+    val choice = request.withFiles == null
+    val count = request.ids.size
+    AlertDialog(onDismissRequest = vm::dismissDeletion, shape = RoundedCornerShape(28.dp),
+        title = { Text(if(choice) "清空下载记录" else if(files) "删除任务和文件？" else "删除任务？") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(if(choice) "将清空 $count 个下载任务，请选择是否保留已下载文件。"
+                    else if(files) "将删除 $count 个任务，以及这些任务保存的所有视频和图片。文件删除后无法恢复。"
+                    else "将删除 $count 个任务，已保存的视频和图片会保留在相册中。")
+                Text("未完成的下载会停止，临时文件会清理。", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if(choice) {
+                    OutlinedButton(onClick = { vm.confirmDeletion(false) }, enabled = !vm.deleting, modifier = Modifier.fillMaxWidth()) { Text("仅删除任务") }
+                    OutlinedButton(onClick = vm::chooseDeleteFiles, enabled = !vm.deleting, modifier = Modifier.fillMaxWidth()) { Text("删除任务和文件") }
+                }
+                if(vm.deleting) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+        }, confirmButton = {
+            if(!choice) Button(onClick = { vm.confirmDeletion(files) }, enabled = !vm.deleting,
+                colors = if(files) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors(),
+                modifier = Modifier.testTag("confirmDeleteTasks")) { Text(if(files) "确认删除文件" else "删除任务") }
+        }, dismissButton = { TextButton(onClick = vm::dismissDeletion, enabled = !vm.deleting) { Text("取消") } })
+}
+
 @Composable private fun SettingsPage(vm: MainViewModel, onClipboard: (Boolean) -> Unit) {
     val context = LocalContext.current
     val parallelism by vm.store.parallelism.collectAsStateWithLifecycle()

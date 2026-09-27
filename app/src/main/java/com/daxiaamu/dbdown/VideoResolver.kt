@@ -11,7 +11,7 @@ data class VideoInfo(
     val source: VideoLink, val id: String, val title: String,
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
-    val music: String? = null
+    val music: String? = null, val videoFallbacks: List<String> = emptyList()
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {

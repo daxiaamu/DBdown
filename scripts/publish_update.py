@@ -116,7 +116,7 @@ def validate_generated():
         folder = ROOT / "updates" / channel
         if not (folder / "latest.json").exists():
             continue
-        pointer = json.loads((folder / "latest.json").read_text())
+        pointer = json.loads((folder / "latest.json").read_text(encoding="utf-8"))
         revision, digest = pointer["policyRevision"], pointer["manifestSha256"]
         path = f"updates/{channel}/manifests/{revision}-{digest}.json"
         if pointer["manifestPath"] != path:
@@ -128,7 +128,7 @@ def validate_generated():
         validate_manifest(manifest)
         if manifest["channel"] != channel or manifest["policyRevision"] != revision:
             raise ValueError("Channel/revision mismatch")
-        policy = json.loads((ROOT / "updates" / f"policy-{channel}.json").read_text())
+        policy = json.loads((ROOT / "updates" / f"policy-{channel}.json").read_text(encoding="utf-8"))
         if policy["policyRevision"] != revision or policy["maxForcedVersionCode"] != manifest["maxForcedVersionCode"]:
             raise ValueError("Policy changed during publication; rerun with review")
 
@@ -156,7 +156,7 @@ def main():
     asset = assets[0]
     channel = "beta" if release["prerelease"] else "stable"
     policy_path = ROOT / "updates" / f"policy-{channel}.json"
-    policy = json.loads(policy_path.read_text())
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
     if policy["channel"] != channel or not str(policy.get("reason", "")).strip():
         raise ValueError("Policy channel/reason missing")
     for field in ("policyRevision", "maxForcedVersionCode"):
@@ -183,8 +183,8 @@ def main():
             raise ValueError("Release and APK channels differ")
         previous_path = ROOT / "updates" / channel / "latest.json"
         if previous_path.exists():
-            old_pointer = json.loads(previous_path.read_text())
-            old = json.loads((ROOT / old_pointer["manifestPath"]).read_text())
+            old_pointer = json.loads(previous_path.read_text(encoding="utf-8"))
+            old = json.loads((ROOT / old_pointer["manifestPath"]).read_text(encoding="utf-8"))
             if policy["policyRevision"] <= old["policyRevision"] or code <= old["versionCode"]:
                 raise ValueError("Increment policyRevision and APK versionCode before publishing")
             if policy["maxForcedVersionCode"] < old["maxForcedVersionCode"]:

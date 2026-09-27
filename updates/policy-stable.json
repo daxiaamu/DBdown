@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 1,
+  "policyRevision": 2,
   "maxForcedVersionCode": 0,
-  "reason": "初始策略：仅提供可选更新，不强制升级"
+  "reason": "0.6.1: remove download tab badge and add official playback fallback"
 }

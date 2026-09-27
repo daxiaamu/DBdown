@@ -27,6 +27,12 @@ import java.util.concurrent.TimeUnit
 
 class DownloadService : Service() {
     companion object {
+        private var activeService: DownloadService? = null
+        suspend fun awaitCancellation(ids: List<String>) {
+            withContext(Dispatchers.Main.immediate) {
+                activeService?.let { service -> if(service::queue.isInitialized) service.queue.cancelAndJoin(ids) }
+            }
+        }
         const val CHANNEL = "download_progress"
         const val RESULTS = "download_results"
         fun start(context: Context) = context.startForegroundService(Intent(context, DownloadService::class.java))
@@ -46,6 +52,7 @@ class DownloadService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         notifications.createNotificationChannel(NotificationChannel(CHANNEL, "下载进度", NotificationManager.IMPORTANCE_LOW))
         notifications.createNotificationChannel(NotificationChannel(RESULTS, "下载结果", NotificationManager.IMPORTANCE_DEFAULT))
     }
@@ -96,7 +103,9 @@ class DownloadService : Service() {
                     if(v > 0 && a > 0) v + a else -1L
                 } else -1L
                 val video = File(dir, "video.mp4")
-                download(info.video, video, info, task.id, 0L, info.audio != null, wholeTotal)
+                downloadWithFallback(listOf(info.video) + info.videoFallbacks) { url ->
+                    download(url, video, info, task.id, 0L, info.audio != null, wholeTotal)
+                }
                 val output = if(info.audio != null) {
                     val audio = File(dir, "audio.m4a")
                     download(info.audio, audio, info, task.id, video.length(), false)
@@ -119,6 +128,7 @@ class DownloadService : Service() {
                 val message = when(e) {
                     is java.net.UnknownHostException -> "网络不可用，请联网后重试"
                     is java.net.SocketTimeoutException -> "连接超时，请稍后重试"
+                    is java.net.SocketException, is java.io.EOFException -> "下载连接被服务器中断，备用线路也未成功，请稍后重试"
                     is org.json.JSONException -> "平台返回的数据格式发生变化，请稍后重试"
                     else -> e.message?.take(180) ?: "下载失败，请重试"
                 }
@@ -324,6 +334,7 @@ class DownloadService : Service() {
         stopSelf()
     }
     override fun onDestroy() {
+        if(activeService === this) activeService = null
         if(::queue.isInitialized) queue.close()
         store.tasks.value.filter { it.status.active }.forEach { task ->
             store.update(task.id) { if(it.status.active) it.copy(status = TaskStatus.INTERRUPTED, speed = 0,

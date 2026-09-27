@@ -34,6 +34,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var revealTaskId by mutableStateOf<String?>(null)
         private set
     fun taskRevealed(id: String) { if(revealTaskId == id) revealTaskId = null }
+    internal var deleteRequest by mutableStateOf<DeleteRequest?>(null)
+        private set
+    var deleting by mutableStateOf(false)
+        private set
+    internal fun requestDelete(ids: List<String>, all: Boolean = false, withFiles: Boolean? = null) {
+        if(!deleting && ids.isNotEmpty()) deleteRequest = DeleteRequest(ids.toList(), all, withFiles)
+    }
+    internal fun chooseDeleteFiles() { deleteRequest = deleteRequest?.copy(withFiles = true) }
+    internal fun dismissDeletion() { if(!deleting) deleteRequest = null }
+    internal fun confirmDeletion(withFiles: Boolean) {
+        val request = deleteRequest ?: return
+        if(deleting) return
+        deleting = true
+        viewModelScope.launch {
+            try {
+                val result = deleteDownloadTasks(store, request.ids, withFiles, DownloadService::awaitCancellation) { value ->
+                    context.contentResolver.delete(android.net.Uri.parse(value), null, null)
+                }
+                notice = if(result.failed == 0) "已删除 ${result.removed} 个任务" else "已删除 ${result.removed} 个任务，${result.failed} 个任务的文件无法删除，记录已保留"
+                deleteRequest = null
+            } catch(e: CancellationException) { throw e }
+            catch(_: Exception) { notice = "删除未完成，请重试" }
+            finally { deleting = false }
+        }
+    }
     var settings by mutableStateOf(false)
     var inputVisible by mutableStateOf(false)
     var albumMode by mutableStateOf(AlbumMode.IMAGES)
@@ -117,6 +142,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         false
     }
     fun retry(id: String) {
+        if(deleting) return
         val task = store.get(id) ?: return
         if(task.status.pending) return
         if(store.tasks.value.any { it.id != id && it.key == task.key && it.albumMode == task.albumMode && (it.status.pending || it.status == TaskStatus.COMPLETED) }) {
@@ -129,6 +155,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         runCatching { DownloadService.pause(context) }.onFailure { notice = "无法暂停下载，请重试" }
     }
     fun resumeDownloads() {
+        if(deleting) return
         runCatching { DownloadService.resume(context) }.onFailure { notice = "无法继续下载，请重试" }
     }
     fun setParallelism(count: Int) { store.setParallelism(count) }
