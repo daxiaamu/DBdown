@@ -36,6 +36,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -196,41 +202,90 @@ private val paths = mapOf(
 @Composable private fun LinkDialog(vm: MainViewModel, submit: () -> Unit) {
     val context = LocalContext.current
     val detected = remember(vm.input) { Links.detect(vm.input) }
-    AlertDialog(onDismissRequest = { vm.inputVisible = false },
-        shape = RoundedCornerShape(28.dp),
-        title = { Text("添加下载", style = MaterialTheme.typography.titleLarge) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("粘贴链接或完整分享文案", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedTextField(value = vm.input, onValueChange = { vm.input = it.take(16000); vm.error = null },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 130.dp, max = 200.dp),
-                    placeholder = { Text("B 站 / 抖音链接，或 BV / AV 号") }, shape = RoundedCornerShape(16.dp),
-                    isError = vm.error != null, maxLines = 5)
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(if(detected != null) "已识别：${detected.platform.label}链接" else "自动识别视频或图集",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if(detected != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f))
-                    TextButton(onClick = {
-                        val manager = context.getSystemService(android.content.ClipboardManager::class.java)
-                        vm.input = runCatching { manager.primaryClip?.getItemAt(0)?.text?.toString().orEmpty().take(16000) }.getOrDefault("")
-                        vm.error = null
-                    }) { Text("粘贴") }
-                }
-                if(detected?.platform == Platform.DOUYIN) {
-                    Text("如果是图集，保存为", style = MaterialTheme.typography.bodyMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(selected = vm.albumMode == AlbumMode.IMAGES, onClick = { vm.albumMode = AlbumMode.IMAGES }, label = { Text("图片") })
-                        FilterChip(selected = vm.albumMode == AlbumMode.VIDEO, onClick = { vm.albumMode = AlbumMode.VIDEO }, label = { Text("视频") })
+    val focus = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    var candidate by remember { mutableStateOf<String?>(null) }
+    var inspected by remember { mutableStateOf<String?>(null) }
+    Dialog(onDismissRequest = { vm.inputVisible = false }, properties = DialogProperties(
+        usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        val windowFocused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(focused, windowFocused, vm.clipboardEnabled) {
+            if(!focused || !windowFocused || !vm.clipboardEnabled) return@LaunchedEffect
+            val text = readClipboardText(context, excludeSensitive = true) ?: return@LaunchedEffect
+            if(text == inspected) return@LaunchedEffect
+            inspected = text
+            val link = Links.detect(text)
+            candidate = text.takeIf { link != null && link.key != Links.detect(vm.input)?.key }
+        }
+        LaunchedEffect(Unit) { focus.requestFocus() }
+        Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedVisibility(candidate != null, enter = slideInVertically { -it } + fadeIn(), exit = fadeOut()) {
+                candidate?.let { text ->
+                    Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 8.dp,
+                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")) {
+                        Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
+                            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                Text("剪贴板中有${Links.detect(text)?.platform?.label.orEmpty()}链接", style = MaterialTheme.typography.titleMedium)
+                                Text("是否填入输入框？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            TextButton(onClick = { vm.input = text; vm.error = null; candidate = null }) { Text("填入") }
+                            IconButton(onClick = { candidate = null }, modifier = Modifier.size(40.dp)) { Glyph("close", "忽略剪贴板链接") }
+                        }
                     }
-                    if(vm.albumMode == AlbumMode.VIDEO) Text("每张图片播放 3 秒，保留可获取的配乐", style = MaterialTheme.typography.bodySmall)
                 }
-                vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             }
-        }, confirmButton = {
-            Button(onClick = submit, enabled = vm.input.isNotBlank(), shape = RoundedCornerShape(14.dp)) { Text("下载") }
-        }, dismissButton = { TextButton(onClick = { vm.inputVisible = false }) { Text("取消") } })
+            Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 6.dp, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("添加下载", style = MaterialTheme.typography.titleLarge)
+                        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("粘贴链接或完整分享文案", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedTextField(value = vm.input, onValueChange = { vm.input = it.take(16000); vm.error = null; candidate = null },
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp, max = 180.dp)
+                                    .testTag("downloadLinkInput").focusRequester(focus).onFocusChanged { focused = it.isFocused },
+                                placeholder = { Text("B 站 / 抖音链接，或 BV / AV 号") }, shape = RoundedCornerShape(16.dp),
+                                trailingIcon = if(vm.input.isNotEmpty()) {{ IconButton(onClick = {
+                                    vm.input = ""; vm.error = null; candidate = null; focus.requestFocus()
+                                }, modifier = Modifier.testTag("clearLinkInput")) { Glyph("close", "清空输入") } }} else null,
+                                isError = vm.error != null, maxLines = 5)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(if(detected != null) "已识别：${detected.platform.label}链接" else "自动识别视频或图集",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if(detected != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    vm.input = readClipboardText(context, excludeSensitive = false).orEmpty()
+                                    vm.error = null; candidate = null
+                                }) { Text("粘贴") }
+                            }
+                            if(detected?.platform == Platform.DOUYIN) {
+                                Text("如果是图集，保存为", style = MaterialTheme.typography.bodyMedium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = vm.albumMode == AlbumMode.IMAGES, onClick = { vm.albumMode = AlbumMode.IMAGES }, label = { Text("图片") })
+                                    FilterChip(selected = vm.albumMode == AlbumMode.VIDEO, onClick = { vm.albumMode = AlbumMode.VIDEO }, label = { Text("视频") })
+                                }
+                                if(vm.albumMode == AlbumMode.VIDEO) Text("每张图片播放 3 秒，保留可获取的配乐", style = MaterialTheme.typography.bodySmall)
+                            }
+                            vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                            TextButton(onClick = { vm.inputVisible = false }) { Text("取消") }
+                            Button(onClick = submit, enabled = vm.input.isNotBlank(), shape = RoundedCornerShape(14.dp)) { Text("下载") }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
+
+internal fun readClipboardText(context: android.content.Context, excludeSensitive: Boolean): String? = runCatching {
+    val clip = context.getSystemService(android.content.ClipboardManager::class.java).primaryClip ?: return@runCatching null
+    if(excludeSensitive && clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@runCatching null
+    if(clip.itemCount == 0) null else clip.getItemAt(0).text?.toString()?.take(16000)
+}.getOrNull()
 
 @Composable private fun DownloadsPage(tasks: List<DownloadTask>, vm: MainViewModel, requestNotifications: () -> Unit) {
     var filter by rememberSaveable { mutableIntStateOf(0) }
