@@ -431,11 +431,11 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                         Text(task.platform.label + if(task.quality.contains("张图片")) " · ${task.quality}" else "",
                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                        if(task.bytes > 0 || task.status == TaskStatus.DOWNLOADING) {
-                            Text(formatBytes(task.bytes), maxLines = 1,
-                                style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        Text(if(task.status == TaskStatus.COMPLETED) formatBytes(task.bytes) else task.status.label,
+                            maxLines = 1, style = MaterialTheme.typography.labelMedium,
+                            fontFamily = if(task.status == TaskStatus.COMPLETED) FontFamily.Monospace else FontFamily.Default,
+                            color = if(task.status == TaskStatus.FAILED || task.status == TaskStatus.INTERRUPTED)
+                                MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(task.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -465,28 +465,20 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        val icon = when(task.status) {
-                            TaskStatus.COMPLETED -> "completed"
-                            TaskStatus.PAUSED -> "pause"
-                            TaskStatus.QUEUED -> "clock"
-                            TaskStatus.RESOLVING -> "search"
-                            TaskStatus.MERGING -> "layers"
-                            TaskStatus.DOWNLOADING, TaskStatus.SAVING -> "download"
-                            TaskStatus.CANCELLED -> "close"
-                            TaskStatus.FAILED, TaskStatus.INTERRUPTED -> "error"
+                        if(task.status == TaskStatus.DOWNLOADING) {
+                            Text("${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
+                                style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
+                                style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        Glyph(icon, task.status.label, tint = when(task.status) {
-                            TaskStatus.COMPLETED -> if(isSystemInDarkTheme()) Color(0xFF80D6A3) else Color(0xFF26854B)
-                            TaskStatus.FAILED, TaskStatus.INTERRUPTED -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        })
-                        Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
-                            style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if(task.status == TaskStatus.DOWNLOADING) {
-                        Text("${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
-                            style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
+                        Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
+                            style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }

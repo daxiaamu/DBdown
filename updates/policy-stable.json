@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 7,
+  "policyRevision": 8,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.9: higher available quality, accurate resolution and glass UI fixes"
+  "reason": "0.6.10: clearer download card status and progress layout"
 }
