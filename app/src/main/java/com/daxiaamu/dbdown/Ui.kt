@@ -170,18 +170,6 @@ private val paths = mapOf(
     LaunchedEffect(vm.notice) {
         vm.notice?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); vm.notice = null }
     }
-    val suggestion = vm.clipboardSuggestion?.takeUnless { vm.inputVisible || !vm.clipboardEnabled }
-    ClipboardPromptEffect(suggestion?.id,
-        "发现${suggestion?.source?.platform?.label.orEmpty()}${if(suggestion?.images?.isNotEmpty() == true) "图集" else "视频"}",
-        suggestion?.title.orEmpty(), "下载作品",
-        buildList {
-            add(ClipboardPromptAction(if(suggestion?.images?.isNotEmpty() == true) "保存图片" else "下载") {
-                if(vm.downloadSuggestion()) requestNotifications()
-            })
-            if(suggestion?.images?.isNotEmpty() == true) add(ClipboardPromptAction("合成视频") {
-                if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications()
-            })
-        }, open = { suggestion?.let { vm.openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
     Surface(Modifier.fillMaxSize().then(if(updateState.dialog) Modifier.hazeSource(updateHaze) else Modifier),
         color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
@@ -238,6 +226,30 @@ private val paths = mapOf(
                 FloatingTabs(pager, haze,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
+            ClipboardSuggestionOverlay(vm, haze, requestNotifications)
+        }
+    }
+    if(vm.inputVisible) LinkDialog(vm, dialogHaze) { if(vm.submit()) requestNotifications() }
+    DeleteTasksDialog(vm)
+    com.daxiaamu.dbdown.update.UpdateOverlay(updateManager, updateHaze)
+}
+
+
+@Composable internal fun BoxScope.ClipboardSuggestionOverlay(vm: MainViewModel, haze: HazeState,
+    requestNotifications: () -> Unit = {}, openInput: (String) -> Unit = vm::openInput) {
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp
+    val suggestion = vm.clipboardSuggestion?.takeUnless { vm.inputVisible || !vm.clipboardEnabled }
+    ClipboardPromptEffect(suggestion?.id,
+        "发现${suggestion?.source?.platform?.label.orEmpty()}${if(suggestion?.images?.isNotEmpty() == true) "图集" else "视频"}",
+        suggestion?.title.orEmpty(), "下载作品",
+        buildList {
+            add(ClipboardPromptAction(if(suggestion?.images?.isNotEmpty() == true) "保存图片" else "下载") {
+                if(vm.downloadSuggestion()) requestNotifications()
+            })
+            if(suggestion?.images?.isNotEmpty() == true) add(ClipboardPromptAction("合成视频") {
+                if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications()
+            })
+        }, open = { suggestion?.let { openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
             AnimatedVisibility(suggestion != null,
                 modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).padding(top = topInset - 72.dp + if(ClipboardLivePrompt.avoidSystemIsland) 96.dp else 8.dp),
                 enter = slideInVertically(tween(220)) { -it } + fadeIn(),
@@ -264,11 +276,6 @@ private val paths = mapOf(
                     }
                 }
             }
-        }
-    }
-    if(vm.inputVisible) LinkDialog(vm, dialogHaze) { if(vm.submit()) requestNotifications() }
-    DeleteTasksDialog(vm)
-    com.daxiaamu.dbdown.update.UpdateOverlay(updateManager, updateHaze)
 }
 
 @Composable private fun LinkDialog(vm: MainViewModel, haze: HazeState, submit: () -> Unit) {
@@ -282,7 +289,7 @@ private val paths = mapOf(
         usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val windowFocused = LocalWindowInfo.current.isWindowFocused
         LaunchedEffect(focused, windowFocused, vm.clipboardEnabled) {
-            if(!focused || !windowFocused || !vm.clipboardEnabled) return@LaunchedEffect
+            if(!windowFocused || !vm.clipboardEnabled) return@LaunchedEffect
             val text = readClipboardText(context, excludeSensitive = true) ?: return@LaunchedEffect
             if(text == inspected) return@LaunchedEffect
             inspected = text

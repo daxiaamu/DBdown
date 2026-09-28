@@ -4,6 +4,9 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.os.Bundle
 import android.webkit.*
+import androidx.activity.viewModels
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -16,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 
 class LoginActivity : ComponentActivity() {
+    private val clipboardModel by viewModels<MainViewModel>()
     internal var browser: WebView? = null
         private set
     private val platform by lazy { Platform.accountPlatforms.firstOrNull { it.name == intent.getStringExtra("platform") } ?: Platform.BILI }
@@ -31,6 +35,9 @@ class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycle.addObserver(ForegroundClipboardObserver(this, {
+            getSharedPreferences("settings", 0).getBoolean("clipboard", true)
+        }) { text -> clipboardModel.inspectClipboard(text) })
         desktopFallback = savedInstanceState?.getBoolean("desktop_fallback", false) ?: false
         // The WebView has one Activity owner, independent of Compose recomposition.
         val view = createBrowser(savedInstanceState)
@@ -38,7 +45,9 @@ class LoginActivity : ComponentActivity() {
         setContent {
             DownloaderTheme {
                 BackHandler { finish() }
-                Surface(Modifier.fillMaxSize()) {
+                val haze = remember { HazeState() }
+                Box(Modifier.fillMaxSize()) {
+                Surface(Modifier.fillMaxSize().hazeSource(haze)) {
                     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                         LoginToolbar()
                         // Keep the web viewport stable: changing progress must not resize the page.
@@ -48,6 +57,17 @@ class LoginActivity : ComponentActivity() {
                         AndroidView(modifier = Modifier.weight(1f).fillMaxWidth(),
                             factory = { view }, onRelease = { releaseBrowser(it) })
                     }
+                }
+                ClipboardSuggestionOverlay(clipboardModel, haze,
+                    requestNotifications = {
+                        startActivity(Intent(this@LoginActivity, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            .putExtra("downloads", true))
+                    }, openInput = { link ->
+                        startActivity(Intent(this@LoginActivity, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                            .setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link))
+                    })
                 }
             }
         }

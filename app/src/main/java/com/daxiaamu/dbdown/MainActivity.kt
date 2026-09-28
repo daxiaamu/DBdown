@@ -7,7 +7,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.awaitCancellation
 import android.Manifest
-import android.content.ClipboardManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -20,12 +19,14 @@ import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
     private val model by viewModels<MainViewModel>()
-    private val clipboard by lazy { getSystemService(ClipboardManager::class.java) }
-    private val listener = ClipboardManager.OnPrimaryClipChangedListener { checkClipboard() }
+    private val clipboardObserver by lazy { ForegroundClipboardObserver(this, { model.clipboardEnabled && !model.inputVisible }) { text ->
+        if(model.clipboardEnabled && !model.inputVisible) model.inspectClipboard(text)
+    } }
     private val notifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        lifecycle.addObserver(clipboardObserver)
         if(savedInstanceState == null) handleIntent(intent)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
@@ -60,21 +61,11 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         WebAccounts.refresh()
-        clipboard.addPrimaryClipChangedListener(listener)
         window.decorView.post { checkClipboard(); (application as DownloaderApp).updates.onResume(this) }
     }
-    override fun onPause() { clipboard.removePrimaryClipChangedListener(listener); super.onPause() }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if(hasFocus) window.decorView.post { checkClipboard() }
     }
-    private fun checkClipboard() {
-        if(!hasWindowFocus() || !model.clipboardEnabled || model.inputVisible) return
-        val text = runCatching {
-            val clip = clipboard.primaryClip ?: return@runCatching null
-            if(clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@runCatching null
-            if(clip.itemCount == 0) null else clip.getItemAt(0).text?.toString()
-        }.getOrNull()
-        model.inspectClipboard(text)
-    }
+    private fun checkClipboard() { clipboardObserver.check() }
 }
