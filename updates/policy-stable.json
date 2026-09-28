@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 8,
+  "policyRevision": 9,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.10: clearer download card status and progress layout"
+  "reason": "0.6.11: YouTube support, account verification and UI refinements"
 }

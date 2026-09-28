@@ -17,6 +17,20 @@ class AccountValidityTest {
         assertEquals(AccountStatus.EXPIRED, accountVerdict(Platform.DOUYIN,
             """{"message":"error","data":{"error_code":1,"description":"会话过期，请重新登录"}}"""))
     }
+    @Test fun douyinWebSelfProfileSeparatesLoginFromChallenges() {
+        assertEquals(AccountStatus.VALID, accountVerdict(Platform.DOUYIN,
+            """{"status_code":0,"user":{"uid":"12345"}}"""))
+        assertEquals(AccountStatus.EXPIRED, accountVerdict(Platform.DOUYIN,
+            """{"status_code":8,"status_msg":"请先登录"}"""))
+        for(body in listOf(
+            """{"status_code":0,"user":{"uid":null}}""",
+            """{"status_code":0,"user":{"uid":"0"}}""",
+            """{"status_code":0}""",
+            """{"status_code":12}""",
+            """{"message":"error","data":{"error_code":3053}}""",
+            """{"message":"success","data":{"uid":null}}"""))
+            assertEquals(AccountStatus.UNKNOWN, accountVerdict(Platform.DOUYIN,body))
+    }
     @Test fun douyinAuthenticatedIdentity() {
         assertEquals(AccountStatus.VALID, accountVerdict(Platform.DOUYIN,
             """{"message":"success","data":{"user_id":12345}}"""))

@@ -3,14 +3,20 @@ package com.daxiaamu.dbdown
 import java.net.URI
 import java.net.URLDecoder
 
-enum class Platform(val label: String) { BILI("B 站"), DOUYIN("抖音") }
+enum class Platform(val label: String) { BILI("B 站"), DOUYIN("抖音"), YOUTUBE("YouTube");
+    companion object { val accountPlatforms = listOf(BILI, DOUYIN, YOUTUBE) }
+}
 data class VideoLink(val platform: Platform, val url: String, val key: String, val part: Int = 1)
 
 
 object Links {
-    private val urls = Regex("""(?i)(?:https?://)?(?:[a-z0-9-]+\.)+(?:com|cn|tv)/[^\s<>"\[\](){}，。！？、【】（）]+""")
+    private val urls = Regex("""(?i)(?:https?://)?(?:[a-z0-9-]+\.)+(?:com|cn|tv|be)/[^\s<>"\[\](){}，。！？、【】（）]+""")
     private val bv = Regex("""(?<![A-Za-z0-9])BV[1-9A-HJ-NP-Za-km-z]{10}(?![A-Za-z0-9])""")
     private val av = Regex("""(?i)^av([1-9][0-9]{0,18})$""")
+    private val youtubeId = Regex("[A-Za-z0-9_-]{11}")
+    private fun youtube(id: String): VideoLink? = id.takeIf { youtubeId.matches(it) }?.let {
+        VideoLink(Platform.YOUTUBE, "https://www.youtube.com/watch?v=$it", "yt:$it")
+    }
     fun detect(text: String): VideoLink? {
         val input = text.take(16000).trim()
         for (match in urls.findAll(input)) {
@@ -21,6 +27,7 @@ object Links {
         av.matchEntire(input)?.groupValues?.get(1)?.let {
             return VideoLink(Platform.BILI, "https://www.bilibili.com/video/av$it", "av$it:p1")
         }
+        youtube(input)?.let { return it }
         return null
     }
     fun fromUrl(raw: String): VideoLink? = runCatching {
@@ -28,6 +35,16 @@ object Links {
         if (uri.scheme !in listOf("http", "https") || uri.userInfo != null || uri.port !in listOf(-1, 443, 80)) return null
         val host = uri.host?.lowercase() ?: return null
         val path = uri.path.orEmpty()
+        if (host in setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be")) {
+            val id = if(host.endsWith("youtu.be")) path.removePrefix("/").trimEnd('/')
+            else if(path == "/watch") {
+                uri.rawQuery.orEmpty().split("&").mapNotNull {
+                    val pair = it.split("=", limit = 2)
+                    if(pair.size == 2 && URLDecoder.decode(pair[0], "UTF-8") == "v") URLDecoder.decode(pair[1], "UTF-8") else null
+                }.singleOrNull()
+            } else Regex("^/(?:shorts|embed|live)/([A-Za-z0-9_-]{11})/?$").matchEntire(path)?.groupValues?.get(1)
+            return id?.let(::youtube)
+        }
         val part = uri.rawQuery.orEmpty().split("&").firstOrNull { it.startsWith("p=") }
             ?.substringAfter("=")?.toIntOrNull()?.coerceIn(1, 10000) ?: 1
         if (host in setOf("b23.tv", "bili2233.cn") && Regex("^/[A-Za-z0-9]+/?$").matches(path)) {

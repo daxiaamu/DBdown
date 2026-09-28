@@ -10,8 +10,8 @@ android {
         minSdk = 33
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 19
-        versionName = "0.6.10"
+        versionCode = 20
+        versionName = "0.6.11"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"daxiaamu/DBdown\"")
         buildConfigField("String", "UPDATE_BRANCH", "\"main\"")
     }
@@ -27,7 +27,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             if(signingPath != null) signingConfig = signingConfigs.getByName("distribution")
         }
     }
@@ -38,6 +38,10 @@ android {
     }
 }
 dependencies {
+    implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.5") {
+        // Extractor calls Rhino Context directly; Android has no JSR-223 scripting engine API.
+        exclude(group = "org.mozilla", module = "rhino-engine")
+    }
     implementation("dev.chrisbanes.haze:haze:1.7.3")
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.activity:activity-compose:1.12.3")

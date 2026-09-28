@@ -96,14 +96,12 @@ private val paths = mapOf(
     "error" to "M22,12 A10,10 0,1 1,2,12 A10,10 0,1 1,22,12 M12,6 L12,13 M12,17 L12,18",
     "home" to "M3,10 L12,3 L21,10 L21,21 L15,21 L15,14 L9,14 L9,21 L3,21 Z",
     "download" to "M12,3 L12,15 M6,9 L12,15 L18,9 M4,16 L4,21 L20,21 L20,16",
-    "settings" to "M9,3 L15,3 L16,6 L19,7 L22,10 L20,13 L20,17 L17,20 L13,20 L10,22 L7,20 L6,17 L3,15 L3,9 L6,7 Z M15.5,12 A3.5,3.5 0,1 1,8.5,12 A3.5,3.5 0,1 1,15.5,12",
     "link" to "M10,13 L14,9 M8,16 L6,18 C2,22 -2,16 2,12 L6,8 C8,6 11,6 13,8 M11,16 C13,18 16,18 18,16 L22,12 C26,8 20,2 16,6 L14,8",
     "close" to "M6,6 L18,18 M18,6 L6,18",
     "back" to "M15,5 L8,12 L15,19",
     "check" to "M5,12 L10,17 L20,7",
     "share" to "M8.5,10.5 L15.5,6.5 M8.5,13.5 L15.5,17.5 M9,12 A3,3 0,1 1,3,12 A3,3 0,1 1,9,12 M21,5 A3,3 0,1 1,15,5 A3,3 0,1 1,21,5 M21,19 A3,3 0,1 1,15,19 A3,3 0,1 1,21,19",
     "pause" to "M8,5 L8,19 M16,5 L16,19",
-    "trash" to "M4,6 L20,6 M9,6 L9,3 L15,3 L15,6 M6,6 L7,21 L17,21 L18,6 M10,10 L10,17 M14,10 L14,17",
     "play" to "M8,5 L19,12 L8,19 Z",
     "retry" to "M4,10 A8,8 0,1 1,5,18 M4,4 L4,10 L10,10",
     "more" to "M12,4 L12,5 M12,11 L12,12 M12,18 L12,19",
@@ -111,6 +109,11 @@ private val paths = mapOf(
     "arrow" to "M5,12 L19,12 M13,6 L19,12 L13,18"
 )
 @Composable internal fun Glyph(name: String, description: String? = null, modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
+    if(name == "settings" || name == "trash") {
+        Icon(androidx.compose.ui.res.painterResource(if(name == "settings") R.drawable.ic_settings else R.drawable.ic_delete), contentDescription = description,
+            modifier = modifier.size(22.dp), tint = tint)
+        return
+    }
     val vector = remember(name) {
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).apply {
             addPath(PathParser().parsePathString(paths.getValue(name)).toNodes(),
@@ -143,6 +146,9 @@ private val paths = mapOf(
     val context = LocalContext.current
     val haze = remember { HazeState() }
     val dialogHaze = remember { HazeState() }
+    val updateHaze = remember { HazeState() }
+    val updateManager = (context.applicationContext as DownloaderApp).updates
+    val updateState by updateManager.state.collectAsStateWithLifecycle()
     val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp
     val blurFadeStart = with(LocalDensity.current) { (topInset - 20.dp).toPx() }
     val blurFadeEnd = with(LocalDensity.current) { (topInset + 24.dp).toPx() }
@@ -173,7 +179,8 @@ private val paths = mapOf(
                 if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications()
             })
         }, open = { suggestion?.let { vm.openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
-    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(Modifier.fillMaxSize().then(if(updateState.dialog) Modifier.hazeSource(updateHaze) else Modifier),
+        color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
             Box(Modifier.fillMaxSize().hazeSource(haze)
                 .then(if(vm.inputVisible) Modifier.hazeSource(dialogHaze) else Modifier)) {
@@ -215,6 +222,12 @@ private val paths = mapOf(
                     } else {
                         Text(if(pager.currentPage == 0) androidx.compose.ui.res.stringResource(R.string.app_name) else "下载", style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.weight(1f))
+                        if(pager.currentPage == 1) {
+                            IconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
+                                enabled = !vm.deleting && tasks.isNotEmpty(), modifier = Modifier.testTag("clearDownloads")) {
+                                Glyph("trash", "清空下载记录")
+                            }
+                        }
                         IconButton(onClick = { vm.settings = true }) { Glyph("settings", "设置") }
                     }
                 }
@@ -252,7 +265,7 @@ private val paths = mapOf(
     }
     if(vm.inputVisible) LinkDialog(vm, dialogHaze) { if(vm.submit()) requestNotifications() }
     DeleteTasksDialog(vm)
-    com.daxiaamu.dbdown.update.UpdateOverlay()
+    com.daxiaamu.dbdown.update.UpdateOverlay(updateManager, updateHaze)
 }
 
 @Composable private fun LinkDialog(vm: MainViewModel, haze: HazeState, submit: () -> Unit) {
@@ -305,7 +318,7 @@ private val paths = mapOf(
                             OutlinedTextField(value = vm.input, onValueChange = { vm.input = it.take(16000); vm.error = null; candidate = null },
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 110.dp, max = 180.dp)
                                     .testTag("downloadLinkInput").focusRequester(focus).onFocusChanged { focused = it.isFocused },
-                                placeholder = { Text("B 站 / 抖音链接，或 BV / AV 号") }, shape = RoundedCornerShape(16.dp),
+                                placeholder = { Text("B 站 / 抖音 / YouTube 链接或视频 ID") }, shape = RoundedCornerShape(16.dp),
                                 trailingIcon = if(vm.input.isNotEmpty()) {{ IconButton(onClick = {
                                     vm.input = ""; vm.error = null; candidate = null; focus.requestFocus()
                                 }, modifier = Modifier.testTag("clearLinkInput")) { Glyph("close", "清空输入") } }} else null,
@@ -368,18 +381,15 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("downloadList"),
         contentPadding = PaddingValues(top = topInset, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item(key = "queueControls") { Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            if(tasks.any { it.status.pending }) FilledTonalIconButton(onClick = {
-                if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
-            }, enabled = !vm.deleting, modifier = Modifier.size(48.dp).testTag("queueControl")) {
-                Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
+        if(tasks.any { it.status.pending }) item(key = "queueControls") {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+                FilledTonalIconButton(onClick = {
+                    if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
+                }, enabled = !vm.deleting, modifier = Modifier.size(48.dp).testTag("queueControl")) {
+                    Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
+                }
             }
-            FilledTonalIconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
-                enabled = !vm.deleting && tasks.isNotEmpty(), modifier = Modifier.size(48.dp).testTag("clearDownloads")) {
-                Glyph("trash", "清空下载记录")
-            }
-        }
         }
         item(key = "filters") { Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("全部", "进行中", "已完成").forEachIndexed { index, title ->
@@ -399,7 +409,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 Text(when(filter) { 1 -> "没有正在下载的作品"; 2 -> "还没有下载完成的作品"; else -> "下载的作品会出现在这里" },
                     style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
-                Text("从 B 站或抖音分享一个视频开始", style = MaterialTheme.typography.bodyMedium,
+                Text("从 B 站、抖音或 YouTube 分享视频开始", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = { vm.openInput() }) { Text("添加链接") }
@@ -428,7 +438,8 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(task.platform.label + if(task.quality.contains("张图片")) " · ${task.quality}" else "",
+                        PlatformIcon(task.platform)
+                        Text(if(task.quality.contains("张图片")) task.quality else "",
                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                         Text(if(task.status == TaskStatus.COMPLETED) formatBytes(task.bytes) else task.status.label,
@@ -464,21 +475,13 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             if(task.error.isNotEmpty()) Text(task.error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                        if(task.status == TaskStatus.DOWNLOADING) {
-                            Text("${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
-                                style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        } else {
-                            Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
-                                style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
+                        style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if(task.status == TaskStatus.DOWNLOADING) {
-                        Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
-                            style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        Text("${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
+                            style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -594,14 +597,14 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                     Switch(checked = vm.clipboardEnabled, onCheckedChange = onClipboard)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("仅识别 B 站和抖音视频，同一视频不重复提醒。普通文本与敏感内容不会保存。", style = MaterialTheme.typography.bodyMedium,
+                Text("仅识别 B 站、抖音和 YouTube 视频，同一视频不重复提醒。普通文本与敏感内容不会保存。", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Surface(shape = RoundedCornerShape(22.dp)) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("在其他应用中添加下载", style = MaterialTheme.typography.titleMedium)
-                Text("系统不允许后台读取剪贴板。在 B 站或抖音中选择「分享 → 更多 → 逗逼下载器」，确认后即可下载。",
+                Text("系统不允许后台读取剪贴板。在视频应用中选择「分享 → 更多 → 逗逼下载器」，确认后即可下载。",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -630,7 +633,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("保存位置", style = MaterialTheme.typography.titleMedium)
                 Text("视频：Movies / 逗逼下载器\n图片：Pictures / 逗逼下载器", style = MaterialTheme.typography.bodyLarge)
-                Text("下载内容自动保存到系统相册。B 站音视频自动合并；抖音图集可保存图片或合成为视频。",
+                Text("下载内容自动保存到系统相册。B 站和 YouTube 音视频自动合并；抖音图集可保存图片或合成为视频。",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

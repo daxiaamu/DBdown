@@ -25,6 +25,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         WebAccounts.refresh(true)
         val actual = expand(link)
         when(actual.platform) {
+            Platform.YOUTUBE -> YoutubeResolver.resolve(actual, trackCall)
             Platform.BILI -> bili(actual)
             Platform.DOUYIN -> douyin(actual)
         }

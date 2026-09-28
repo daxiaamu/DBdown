@@ -19,10 +19,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
     Text("平台账号", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Surface(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Platform.entries.forEach { platform ->
+            Platform.accountPlatforms.forEach { platform ->
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(if(platform == Platform.BILI) "哔哩哔哩" else "抖音", style = MaterialTheme.typography.titleMedium)
+                        Text(if(platform == Platform.BILI) "哔哩哔哩" else platform.label, style = MaterialTheme.typography.titleMedium)
                         Text((statuses[platform] ?: AccountStatus.CHECKING).label,
                             style = MaterialTheme.typography.bodySmall, color = if(statuses[platform] == AccountStatus.EXPIRED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -30,7 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
                         context.startActivity(Intent(context, LoginActivity::class.java).putExtra("platform", platform.name))
                     }) { Text(when(statuses[platform]) { AccountStatus.EXPIRED -> "重新登录"; AccountStatus.VALID -> "管理登录"; else -> "网页登录" }) }
                 }
-                if(platform == Platform.BILI) HorizontalDivider()
+                if(platform != Platform.accountPlatforms.last()) HorizontalDivider()
             }
             Text("登录后使用账号可访问的画质与资源。会员、地区和平台验证限制仍以网站为准。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -43,7 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
     }
     if(confirmClear) AlertDialog(onDismissRequest = { confirmClear = false },
         title = { Text("清除网页登录？") },
-        text = { Text("退出本应用内的 B 站和抖音网页登录，清除本地网页 Cookie 和存储。手机上的官方应用不受影响。正在进行的下载不会重新解析资源。") },
+        text = { Text("退出本应用内的 B 站、抖音和 YouTube 网页登录，清除本地网页 Cookie 和存储。手机上的官方应用不受影响。正在进行的下载不会重新解析资源。") },
         confirmButton = {
             TextButton(onClick = {
                 confirmClear = false; clearing = true

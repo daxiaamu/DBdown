@@ -14,7 +14,7 @@ import org.junit.runner.RunWith
 class AccountExpiryTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     @Test fun expiredHistoryPromptsNavigatesAndCanBeIgnored() {
-        rule.waitUntil(15000) { WebAccounts.statuses.value.size == 2 }
+        rule.waitUntil(15000) { WebAccounts.statuses.value.size == Platform.accountPlatforms.size }
         assumeTrue("Never modify a signed-in user's session", WebAccounts.accounts.value.values.none { it })
         val prefs = rule.activity.getSharedPreferences("account_validity", 0)
         val original = prefs.all.toMap()

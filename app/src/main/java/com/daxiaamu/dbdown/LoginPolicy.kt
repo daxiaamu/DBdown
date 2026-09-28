@@ -4,6 +4,9 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 object LoginPolicy {
     fun allowedNavigation(platform: Platform, url: String): Boolean {
         val parsed = url.toHttpUrlOrNull() ?: return false
+        if(!parsed.isHttps || parsed.username.isNotEmpty() || parsed.password.isNotEmpty() || parsed.port != 443) return false
+        if(platform == Platform.YOUTUBE) return parsed.host == "youtube.com" || parsed.host.endsWith(".youtube.com") ||
+            parsed.host in setOf("accounts.google.com", "myaccount.google.com", "www.google.com")
         val root = if(platform == Platform.BILI) "bilibili.com" else "douyin.com"
         return parsed.isHttps && (parsed.host == root || parsed.host.endsWith(".$root"))
     }

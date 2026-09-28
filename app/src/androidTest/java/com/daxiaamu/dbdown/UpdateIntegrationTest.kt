@@ -1,6 +1,14 @@
 package com.daxiaamu.dbdown
 
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -19,6 +27,13 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class UpdateIntegrationTest {
+    @Composable private fun UpdateScene(manager: UpdateManager) {
+        val haze = remember { HazeState() }
+        Column(Modifier.fillMaxSize().hazeSource(haze).padding(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+            repeat(18) { Text("下载记录 · 用于检查实时模糊的背景文字") }
+        }
+        UpdateOverlay(manager, haze)
+    }
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
     private fun fixture(forced: Boolean = false): AcceptedUpdate {
@@ -53,16 +68,23 @@ class UpdateIntegrationTest {
         try {
             rule.runOnUiThread {
                 manager = UpdateManager(context, name) { _, _ -> fixture() }
-                rule.activity.setContent { DownloaderTheme { UpdateOverlay(manager!!) } }
+                rule.activity.setContent { DownloaderTheme { UpdateScene(manager!!) } }
                 manager!!.check(false)
             }
             rule.waitUntil(5000) { manager!!.state.value.dialog }
             rule.onNodeWithText("下载安装").assertIsDisplayed()
+            rule.waitForIdle()
+            android.os.SystemClock.sleep(700) // Allow the platform dialog window enter animation to finish.
+            val screenshot = InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+            File(context.getExternalFilesDir(null), "update-glass.png").outputStream().use {
+                screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+            }
+            screenshot.recycle()
             rule.onNodeWithText("跳过此版本").assertIsDisplayed().performClick()
             rule.runOnIdle { assertFalse(manager!!.state.value.dialog); manager!!.close() }
             rule.runOnUiThread {
                 manager = UpdateManager(context, name) { _, _ -> fixture() }
-                rule.activity.setContent { DownloaderTheme { UpdateOverlay(manager!!) } }
+                rule.activity.setContent { DownloaderTheme { UpdateScene(manager!!) } }
                 manager!!.check(false)
             }
             rule.waitUntil(5000) { !manager!!.state.value.checking }
@@ -85,7 +107,7 @@ class UpdateIntegrationTest {
             context.getSharedPreferences(name, 0).edit().putLong("skip-stable", update.manifest.versionCode).apply()
             rule.runOnUiThread {
                 manager = UpdateManager(context, name) { _, _ -> update }
-                rule.activity.setContent { DownloaderTheme { UpdateOverlay(manager!!) } }
+                rule.activity.setContent { DownloaderTheme { UpdateScene(manager!!) } }
                 manager!!.check(false)
             }
             rule.waitUntil(5000) { manager!!.state.value.dialog }
@@ -94,7 +116,7 @@ class UpdateIntegrationTest {
             rule.runOnIdle { manager!!.dismiss(false); assertTrue(manager!!.state.value.dialog); manager!!.close() }
             rule.runOnUiThread {
                 manager = UpdateManager(context, name) { _, _ -> error("offline") }
-                rule.activity.setContent { DownloaderTheme { UpdateOverlay(manager!!) } }
+                rule.activity.setContent { DownloaderTheme { UpdateScene(manager!!) } }
                 manager!!.check(true)
             }
             rule.waitUntil(5000) { !manager!!.state.value.checking }

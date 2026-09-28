@@ -27,6 +27,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.daxiaamu.dbdown.DownloaderApp
+import com.daxiaamu.dbdown.GlassPrompt
+import dev.chrisbanes.haze.HazeState
 import java.net.URI
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -71,7 +73,8 @@ import java.util.Locale
     }
 }
 
-@Composable fun UpdateOverlay(manager: UpdateManager = (LocalContext.current.applicationContext as DownloaderApp).updates) {
+@Composable fun UpdateOverlay(manager: UpdateManager = (LocalContext.current.applicationContext as DownloaderApp).updates,
+    haze: HazeState = remember { HazeState() }) {
     val context = LocalContext.current
     val activity = context as? ComponentActivity ?: return
     val state by manager.state.collectAsStateWithLifecycle()
@@ -86,8 +89,9 @@ import java.util.Locale
     Dialog(onDismissRequest = { if(dismissible) manager.dismiss(false) },
         properties = DialogProperties(dismissOnBackPress = dismissible, dismissOnClickOutside = dismissible,
             usePlatformDefaultWidth = false)) {
-        Surface(Modifier.padding(horizontal = 16.dp).widthIn(max = 520.dp).fillMaxWidth(),
+        GlassPrompt(haze, Modifier.padding(horizontal = 16.dp).widthIn(max = 520.dp).fillMaxWidth().testTag("updateDialog"),
             shape = RoundedCornerShape(28.dp)) {
+            CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
             Column(Modifier.padding(20.dp)) {
                 SelectionContainer(Modifier.fillMaxWidth().height((screenHeight * .50f).coerceAtMost(440.dp))) {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
@@ -131,6 +135,7 @@ import java.util.Locale
                     TextButton(onClick = { manager.dismiss(true) }, enabled = dismissible) { Text("跳过此版本") }
                     TextButton(onClick = { manager.dismiss(false) }, enabled = dismissible) { Text("忽略") }
                 }
+            }
             }
         }
     }

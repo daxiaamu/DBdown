@@ -111,11 +111,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onShare(text: String) {
         settings = false
         openInput(text)
-        if(Links.detect(text) == null) error = "没有识别到 B 站视频或抖音作品链接"
+        if(Links.detect(text) == null) error = "没有识别到 B 站、抖音或 YouTube 视频"
     }
     fun submit(): Boolean {
         val link = Links.detect(input)
-        if(link == null) { error = "请粘贴 B 站视频或抖音作品链接，也支持完整分享文案、BV / AV 号"; return false }
+        if(link == null) { error = "请粘贴 B 站、抖音或 YouTube 链接，也支持分享文案、BV / AV 号和 YouTube 视频 ID"; return false }
         val task = store.add(link, albumMode)
         if(task == null) { error = "这个作品已经在下载列表中"; return false }
         revealTaskId = task.id

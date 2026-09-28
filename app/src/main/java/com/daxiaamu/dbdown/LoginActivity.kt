@@ -18,9 +18,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 class LoginActivity : ComponentActivity() {
     internal var browser: WebView? = null
         private set
-    private val platform by lazy { Platform.entries.firstOrNull { it.name == intent.getStringExtra("platform") } ?: Platform.BILI }
-    private val startUrl get() = if(platform == Platform.BILI)
-        "https://passport.bilibili.com/h5-app/passport/login" else "https://www.douyin.com/jingxuan"
+    private val platform by lazy { Platform.accountPlatforms.firstOrNull { it.name == intent.getStringExtra("platform") } ?: Platform.BILI }
+    private val startUrl get() = when(platform) {
+        Platform.BILI -> "https://passport.bilibili.com/h5-app/passport/login"
+        Platform.DOUYIN -> "https://www.douyin.com/jingxuan"
+        Platform.YOUTUBE -> "https://www.youtube.com/signin?next=%2F&hl=zh-CN"
+    }
     private var desktopFallback = false
     private var loadingProgress by mutableIntStateOf(0)
     private var message by mutableStateOf("")
@@ -53,7 +56,7 @@ class LoginActivity : ComponentActivity() {
         val statuses by WebAccounts.statuses.collectAsState()
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             TextButton(onClick = { finish() }) { Text("返回") }
-            Text(if(platform == Platform.BILI) "哔哩哔哩登录" else "抖音登录",
+            Text(if(platform == Platform.BILI) "哔哩哔哩登录" else "${platform.label}登录",
                 modifier = Modifier.weight(1f).padding(top = 12.dp))
             TextButton(onClick = { message = ""; browser?.reload() }) { Text("刷新") }
             TextButton(onClick = { WebAccounts.flush(); finish() }) { Text("完成") }
@@ -92,7 +95,7 @@ class LoginActivity : ComponentActivity() {
                 if(!request.isForMainFrame) return false
                 if(useDesktopIfRequired(view, request.url.toString())) return true
                 if(LoginPolicy.allowedNavigation(platform, request.url.toString())) return false
-                message = "请使用官网提供的短信或扫码登录方式"
+                message = if(platform == Platform.YOUTUBE) "请在 Google 或 YouTube 官方网页内完成登录" else "请使用官网提供的短信或扫码登录方式"
                 return true
             }
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
@@ -111,7 +114,10 @@ class LoginActivity : ComponentActivity() {
                 if(useDesktopIfRequired(view, url)) return
                 if(platform == Platform.BILI) view.evaluateJavascript(LoginPageStyle.BILI, null)
                 host = android.net.Uri.parse(url).host.orEmpty()
-                WebAccounts.refresh()
+                if(platform == Platform.YOUTUBE && (url.contains("deniedsignin") || url.contains("disallowed_useragent"))) {
+                    message = "Google 不允许在此内嵌网页登录；登录未完成"
+                }
+                WebAccounts.refresh(true)
             }
             override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                 if(request.isForMainFrame) message = "网页加载失败，请检查网络后点刷新"
