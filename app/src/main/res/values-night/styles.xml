@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.DBDown" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:isLightTheme">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#B4C5FF</item>
+        <item name="android:windowBackground">#11151D</item>
+        <item name="android:windowSplashScreenBackground">#11151D</item>
+    </style>
+</resources>

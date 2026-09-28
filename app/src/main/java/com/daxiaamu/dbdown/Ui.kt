@@ -53,6 +53,9 @@ import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,7 +130,7 @@ private val paths = mapOf(
 
 @Composable private fun appGlassStyle() = HazeStyle(
     backgroundColor = MaterialTheme.colorScheme.background,
-    tint = HazeTint(MaterialTheme.colorScheme.background.copy(alpha = 0.58f)),
+    tint = HazeTint(MaterialTheme.colorScheme.background.copy(alpha = 0.46f)),
     blurRadius = 14.dp, noiseFactor = 0f
 )
 
@@ -480,10 +483,15 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
-                        style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if(task.status == TaskStatus.DOWNLOADING) {
-                        Text("${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
+                        Text(buildAnnotatedString {
+                            withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
+                                append("${formatBytes(task.speed)}/s")
+                            }
+                            if(task.total > 0) append(" · ${(task.progress*100).toInt()}%")
+                        },
                             style = MaterialTheme.typography.labelLarge, fontFamily = FontFamily.Monospace,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
