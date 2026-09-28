@@ -442,9 +442,13 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                         Text(if(task.quality.contains("张图片")) task.quality else "",
                             modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                        Text(if(task.status == TaskStatus.COMPLETED) formatBytes(task.bytes) else task.status.label,
+                        Text(when(task.status) {
+                                TaskStatus.DOWNLOADING -> "${formatBytes(task.bytes)} / ${if(task.total > 0) formatBytes(task.total) else "未知"}"
+                                TaskStatus.COMPLETED -> formatBytes(task.bytes)
+                                else -> task.status.label
+                            },
                             maxLines = 1, style = MaterialTheme.typography.labelMedium,
-                            fontFamily = if(task.status == TaskStatus.COMPLETED) FontFamily.Monospace else FontFamily.Default,
+                            fontFamily = if(task.status in setOf(TaskStatus.DOWNLOADING, TaskStatus.COMPLETED)) FontFamily.Monospace else FontFamily.Default,
                             color = if(task.status == TaskStatus.FAILED || task.status == TaskStatus.INTERRUPTED)
                                 MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }

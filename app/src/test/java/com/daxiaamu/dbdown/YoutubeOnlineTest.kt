@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit
 
 /** Explicit opt-in: these checks depend on YouTube availability and are not part of offline CI. */
 class YoutubeOnlineTest {
+    @Test fun reportedTitleSample() = check("https://youtu.be/9j_gaUAT2yc?is=BoppiEk0ARCBg8aC")
     @Test fun normalVideo() = check("qIzGvexMjpA")
     @Test fun shorts() = check("https://www.youtube.com/shorts/-9OM3w3TWUs")
     @Test fun bareId() = check("BLKegH19KGI")

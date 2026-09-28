@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 9,
+  "policyRevision": 10,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.11: YouTube support, account verification and UI refinements"
+  "reason": "0.6.12: download byte progress and README badges"
 }
