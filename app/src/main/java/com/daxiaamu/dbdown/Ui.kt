@@ -40,6 +40,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -127,6 +128,15 @@ private val paths = mapOf(
     blurRadius = 14.dp, noiseFactor = 0f
 )
 
+@Composable internal fun GlassPrompt(haze: HazeState, modifier: Modifier = Modifier,
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(24.dp), content: @Composable () -> Unit) {
+    Box(modifier.shadow(4.dp, shape).clip(shape)) {
+        // Blur only the backdrop. Drawing Surface elevation after haze creates a shadow inside the glass.
+        Box(Modifier.matchParentSize().hazeEffect(haze, style = appGlassStyle()))
+        content()
+    }
+}
+
 @Composable fun DownloaderScreen(vm: MainViewModel, requestNotifications: () -> Unit, checkClipboard: () -> Unit) {
     AccountExpiryPrompt { vm.inputVisible = false; vm.settings = true }
     val tasks by vm.store.tasks.collectAsStateWithLifecycle()
@@ -209,7 +219,7 @@ private val paths = mapOf(
                     }
                 }
             if(!vm.settings) {
-                FloatingTabs(pager,
+                FloatingTabs(pager, haze,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
             AnimatedVisibility(suggestion != null,
@@ -217,9 +227,7 @@ private val paths = mapOf(
                 enter = slideInVertically(tween(220)) { -it } + fadeIn(),
                 exit = slideOutVertically(tween(180)) { -it } + fadeOut()) {
                 vm.clipboardSuggestion?.let { info ->
-                    Surface(shape = RoundedCornerShape(24.dp), shadowElevation = 12.dp,
-                        color = Color.Transparent, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
-                            .clip(RoundedCornerShape(24.dp)).hazeEffect(haze, style = appGlassStyle())) {
+                    GlassPrompt(haze, Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("downloadHeadsUp")) {
                         Column(Modifier.padding(start = 18.dp, end = 10.dp, top = 10.dp, bottom = 8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
@@ -279,9 +287,7 @@ private val paths = mapOf(
                         Text("添加下载", style = MaterialTheme.typography.titleLarge)
                         AnimatedVisibility(candidate != null, enter = slideInVertically { -it } + fadeIn(), exit = fadeOut()) {
                             candidate?.let { text ->
-                                Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 8.dp, color = Color.Transparent,
-                                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")
-                                        .clip(RoundedCornerShape(22.dp)).hazeEffect(haze, style = appGlassStyle())) {
+                                GlassPrompt(haze, Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")) {
                                     Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
                                         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {

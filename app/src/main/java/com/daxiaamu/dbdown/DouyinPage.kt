@@ -43,11 +43,23 @@ internal object DouyinPage {
             if(url.host == "aweme.snssdk.com" && url.encodedPath == "/aweme/v1/play/")
                 url.newBuilder().host("www.douyin.com").build().toString() else null
         }
-        val candidates = (alternates + originals).distinct()
-        return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "原视频",
-            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1),
-            resolution = resolutionLabel(play.optInt("width", item.optJSONObject("video")?.optInt("width") ?: 0),
-                play.optInt("height", item.optJSONObject("video")?.optInt("height") ?: 0)))
+        val highQuality = alternates.map { raw ->
+            raw.toHttpUrlOrNull()!!.newBuilder().setQueryParameter("ratio", "1080p").build().toString()
+        }
+        val video = item.optJSONObject("video")!!
+        val bitRates = video.optJSONArray("bit_rate")
+        val ranked = (0 until (bitRates?.length() ?: 0)).mapNotNull { bitRates?.optJSONObject(it) }
+            .sortedWith(compareByDescending<JSONObject> {
+                val stream = it.optJSONObject("play_addr")
+                (stream?.optLong("width") ?: 0L) * (stream?.optLong("height") ?: 0L)
+            }.thenByDescending { it.optLong("bit_rate") })
+            .flatMap { entry ->
+                val list = entry.optJSONObject("play_addr")?.optJSONArray("url_list")
+                (0 until (list?.length() ?: 0)).mapNotNull { validUrl(list!!.optString(it)) }
+            }.map { it.replace("/playwm/", "/play/") }
+        val candidates = (ranked + highQuality + alternates + originals).distinct()
+        return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "自动画质",
+            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1))
     }
     private fun firstUrl(array: JSONArray?): String? = array?.let {
         (0 until it.length()).firstNotNullOfOrNull { i -> validUrl(it.optString(i)) }

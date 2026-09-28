@@ -76,10 +76,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         val dash = play.optJSONObject("dash")
         if (dash != null) {
             val videoArray = dash.getJSONArray("video")
-            val candidates = (0 until videoArray.length()).map { videoArray.getJSONObject(it) }
-                .filter { it.optString("codecs").startsWith("avc") }
-            val video = candidates.maxWithOrNull(compareBy<JSONObject> { it.optInt("height") }.thenBy { it.optLong("bandwidth") })
-                ?: error("这个视频没有可合并的 AVC 视频流")
+            val video = bestBiliVideo(videoArray) ?: error("这个视频没有可合并的 AVC / HEVC 视频流")
             val audioArray = dash.optJSONArray("audio") ?: error("视频没有可用音轨")
             val audio = (0 until audioArray.length()).map { audioArray.getJSONObject(it) }
                 .filter { it.optString("codecs").startsWith("mp4a") }.maxByOrNull { it.optLong("bandwidth") }

@@ -1,5 +1,6 @@
 package com.daxiaamu.dbdown
 
+import dev.chrisbanes.haze.HazeState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -51,7 +52,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
 }
 
 @Composable internal fun FloatingTabs(
-    pager: PagerState, modifier: Modifier = Modifier, onSelect: (Int) -> Unit
+    pager: PagerState, haze: HazeState, modifier: Modifier = Modifier, onSelect: (Int) -> Unit
 ) {
     val density = LocalDensity.current
     val travel = with(density) { 118.dp.toPx() }
@@ -71,7 +72,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
         animationSpec = if(pressed) tween(100) else spring(dampingRatio = .8f, stiffness = 650f),
         label = "tabIslandPress"
     )
-    Surface(modifier.width(250.dp).testTag("tabIsland")
+    GlassPrompt(haze, modifier.width(250.dp).testTag("tabIsland")
         .pointerInput(Unit) {
             // Observe without consuming: capsule drags retain their own gesture arbitration.
             try {
@@ -80,8 +81,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
                 }
             } finally { pointerPressed = false }
         }
-        .graphicsLayer { scaleX = islandScale; scaleY = islandScale }, shape = CircleShape,
-        color = colors.surface, shadowElevation = 10.dp) {
+        .graphicsLayer { scaleX = islandScale; scaleY = islandScale }, shape = CircleShape) {
         Box(Modifier.padding(7.dp).height(50.dp).selectableGroup()
             .draggable(state = dragState, orientation = Orientation.Horizontal,
                 // Keep taps available during animation; capture only after horizontal touch slop.

@@ -10,8 +10,8 @@ android {
         minSdk = 33
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 17
-        versionName = "0.6.8"
+        versionCode = 18
+        versionName = "0.6.9"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"daxiaamu/DBdown\"")
         buildConfigField("String", "UPDATE_BRANCH", "\"main\"")
     }

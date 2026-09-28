@@ -115,8 +115,9 @@ class DownloadService : Service() {
                 validateVideo(output)
                 state(task.id, TaskStatus.SAVING)
                 val uri = publish(output, info.title, task.id)
+                val measured = savedResolution(this@DownloadService, task.copy(uri = uri.toString(), mimeType = "video/mp4"))
                 store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(),
-                    bytes = output.length(), total = output.length(), speed = 0, error = "") }
+                    resolution = measured.ifBlank { it.resolution }, bytes = output.length(), total = output.length(), speed = 0, error = "") }
                 notifyResult(task.id, info.title, "已保存到 Movies/逗逼下载器", uri)
             }
         } catch(e: CancellationException) {
@@ -203,11 +204,20 @@ class DownloadService : Service() {
 
     private suspend fun download(url: String, file: File, info: VideoInfo, id: String, base: Long, hasNext: Boolean, wholeTotal: Long = -1L) {
         val worker = currentCoroutineContext()[Job]
+        val measureVideo = info.source.platform == Platform.DOUYIN && file.name == "video.mp4"
+        var actualResolution = ""
+        var nextProbe = 64 * 1024L
+        if(measureVideo) store.update(id) { it.copy(resolution = "") }
         ResumableTransfer(transferClient) { trackCall(id, it, worker) }.download(url, file,
             info.id + "|" + info.quality, info.userAgent, info.referer) { bytes, length, speed ->
+            if(measureVideo && actualResolution.isBlank() && bytes >= nextProbe) {
+                actualResolution = partialVideoResolution(file)
+                nextProbe = if(nextProbe >= 512 * 1024L) Long.MAX_VALUE else nextProbe * 2
+            }
             val total = if(length >= 0 && !hasNext) base + length else wholeTotal
             store.update(id, save = speed == 0L) {
-                if(it.status == TaskStatus.DOWNLOADING) it.copy(bytes = base + bytes, total = total, speed = speed) else it
+                if(it.status == TaskStatus.DOWNLOADING) it.copy(bytes = base + bytes, total = total, speed = speed,
+                    resolution = actualResolution.ifBlank { it.resolution }) else it
             }
             notifyProgress()
         }

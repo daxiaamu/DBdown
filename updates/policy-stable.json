@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 6,
+  "policyRevision": 7,
   "maxForcedVersionCode": 0,
-  "reason": "Refresh 0.6.8 release notes with project recommendation"
+  "reason": "0.6.9: higher available quality, accurate resolution and glass UI fixes"
 }
