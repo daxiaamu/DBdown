@@ -125,6 +125,18 @@ private val paths = mapOf(
     LaunchedEffect(vm.notice) {
         vm.notice?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show(); vm.notice = null }
     }
+    val suggestion = vm.clipboardSuggestion?.takeUnless { vm.inputVisible || !vm.clipboardEnabled }
+    ClipboardPromptEffect(suggestion?.id,
+        "发现${suggestion?.source?.platform?.label.orEmpty()}${if(suggestion?.images?.isNotEmpty() == true) "图集" else "视频"}",
+        suggestion?.title.orEmpty(), "下载作品",
+        buildList {
+            add(ClipboardPromptAction(if(suggestion?.images?.isNotEmpty() == true) "保存图片" else "下载") {
+                if(vm.downloadSuggestion()) requestNotifications()
+            })
+            if(suggestion?.images?.isNotEmpty() == true) add(ClipboardPromptAction("合成视频") {
+                if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications()
+            })
+        }, open = { suggestion?.let { vm.openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             Column(Modifier.fillMaxSize()) {
@@ -165,8 +177,8 @@ private val paths = mapOf(
                 FloatingTabs(pager,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
-            AnimatedVisibility(vm.clipboardSuggestion != null && !vm.inputVisible,
-                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp, vertical = 8.dp),
+            AnimatedVisibility(suggestion != null,
+                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).padding(top = if(ClipboardLivePrompt.avoidSystemIsland) 96.dp else 8.dp),
                 enter = slideInVertically(tween(220)) { -it } + fadeIn(),
                 exit = slideOutVertically(tween(180)) { -it } + fadeOut()) {
                 vm.clipboardSuggestion?.let { info ->
@@ -218,28 +230,33 @@ private val paths = mapOf(
             candidate = text.takeIf { link != null && link.key != Links.detect(vm.input)?.key }
         }
         LaunchedEffect(Unit) { focus.requestFocus() }
+        LaunchedEffect(vm.clipboardEnabled) { if(!vm.clipboardEnabled) candidate = null }
+        ClipboardPromptEffect(candidate,
+            "剪贴板中有${candidate?.let(Links::detect)?.platform?.label.orEmpty()}链接", "是否填入下载输入框？", "填入链接",
+            listOf(ClipboardPromptAction("填入") { candidate?.let { vm.input = it; vm.error = null }; candidate = null }),
+            open = { candidate?.let { vm.input = it; vm.error = null }; candidate = null }, dismiss = { candidate = null })
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
-            AnimatedVisibility(candidate != null, enter = slideInVertically { -it } + fadeIn(), exit = fadeOut()) {
-                candidate?.let { text ->
-                    Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 8.dp,
-                        modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")) {
-                        Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
-                            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                                Text("剪贴板中有${Links.detect(text)?.platform?.label.orEmpty()}链接", style = MaterialTheme.typography.titleMedium)
-                                Text("是否填入输入框？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = { vm.input = text; vm.error = null; candidate = null }) { Text("填入") }
-                            IconButton(onClick = { candidate = null }, modifier = Modifier.size(40.dp)) { Glyph("close", "忽略剪贴板链接") }
-                        }
-                    }
-                }
-            }
             Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 6.dp, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
                     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("添加下载", style = MaterialTheme.typography.titleLarge)
+                        AnimatedVisibility(candidate != null, enter = slideInVertically { -it } + fadeIn(), exit = fadeOut()) {
+                            candidate?.let { text ->
+                                Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 8.dp,
+                                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")) {
+                                    Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
+                                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                                            Text("${Links.detect(text)?.platform?.label.orEmpty()}链接", style = MaterialTheme.typography.titleMedium)
+                                            Text("填入剪贴板链接？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        TextButton(onClick = { vm.input = text; vm.error = null; candidate = null }) { Text("填入") }
+                                        IconButton(onClick = { candidate = null }, modifier = Modifier.size(40.dp)) { Glyph("close", "忽略剪贴板链接") }
+                                    }
+                                }
+                            }
+                        }
                         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("粘贴链接或完整分享文案", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedTextField(value = vm.input, onValueChange = { vm.input = it.take(16000); vm.error = null; candidate = null },
@@ -308,9 +325,9 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            FilledTonalIconButton(onClick = {
+            if(tasks.any { it.status.pending }) FilledTonalIconButton(onClick = {
                 if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
-            }, enabled = !vm.deleting && (paused || tasks.any { it.status.active }), modifier = Modifier.size(48.dp).testTag("queueControl")) {
+            }, enabled = !vm.deleting, modifier = Modifier.size(48.dp).testTag("queueControl")) {
                 Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
             }
             FilledTonalIconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
@@ -513,6 +530,16 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 Text("在其他应用中添加下载", style = MaterialTheme.typography.titleMedium)
                 Text("系统不允许后台读取剪贴板。在 B 站或抖音中选择「分享 → 更多 → 逗逼下载器」，确认后即可下载。",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if(android.os.Build.VERSION.SDK_INT >= 36) Surface(onClick = { ClipboardLivePrompt.settings(context) }, shape = RoundedCornerShape(22.dp)) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("流体云与实时活动", style = MaterialTheme.typography.titleMedium)
+                    Text("在系统通知设置中允许显示实时活动。支持时优先使用流体云；应用前台保留避开顶部的提示。",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Glyph("arrow")
             }
         }
         Surface(onClick = {

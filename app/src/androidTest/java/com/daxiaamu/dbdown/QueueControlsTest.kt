@@ -69,10 +69,11 @@ class QueueControlsTest {
             // Cancel only the fixture before resuming, keeping this test independent of platform APIs.
             rule.runOnIdle { vm.cancel(id) }
             rule.waitUntil(10000) { vm.store.get(id)?.status == TaskStatus.CANCELLED }
-            rule.onNodeWithTag("queueControl").performClick()
+            rule.onNodeWithTag("queueControl").assertDoesNotExist()
+            rule.runOnIdle { vm.resumeDownloads() }
             rule.waitUntil(10000) { !vm.store.paused.value }
             rule.waitForIdle()
-            rule.waitUntil(10000) { runCatching { rule.onNodeWithContentDescription("全部暂停").assertExists() }.isSuccess }
+            rule.onNodeWithContentDescription("全部暂停").assertDoesNotExist()
             rule.runOnIdle { vm.settings = true }
             rule.onNodeWithTag("parallelismSetting").performClick()
             rule.onNodeWithText("2 个任务").performClick()

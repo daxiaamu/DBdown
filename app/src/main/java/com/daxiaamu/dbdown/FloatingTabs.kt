@@ -1,5 +1,13 @@
 package com.daxiaamu.dbdown
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.DragScope
@@ -54,7 +62,25 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
         derivedStateOf { (pager.currentPage + pager.currentPageOffsetFraction).coerceIn(0f, 1f) }
     }
     val colors = MaterialTheme.colorScheme
-    Surface(modifier.width(250.dp).testTag("tabIsland"), shape = CircleShape,
+    val interactions = remember { MutableInteractionSource() }
+    val tabPressed by interactions.collectIsPressedAsState()
+    var pointerPressed by remember { mutableStateOf(false) }
+    val pressed = pointerPressed || tabPressed
+    val islandScale by animateFloatAsState(
+        targetValue = if(pressed) .96f else 1f,
+        animationSpec = if(pressed) tween(100) else spring(dampingRatio = .8f, stiffness = 650f),
+        label = "tabIslandPress"
+    )
+    Surface(modifier.width(250.dp).testTag("tabIsland")
+        .pointerInput(Unit) {
+            // Observe without consuming: capsule drags retain their own gesture arbitration.
+            try {
+                awaitPointerEventScope {
+                    while(true) pointerPressed = awaitPointerEvent(PointerEventPass.Initial).changes.any { it.pressed }
+                }
+            } finally { pointerPressed = false }
+        }
+        .graphicsLayer { scaleX = islandScale; scaleY = islandScale }, shape = CircleShape,
         color = colors.surface, shadowElevation = 10.dp) {
         Box(Modifier.padding(7.dp).height(50.dp).selectableGroup()
             .draggable(state = dragState, orientation = Orientation.Horizontal,
@@ -77,6 +103,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
                     Row(Modifier.weight(1f).fillMaxHeight().clip(CircleShape)
                         .testTag("tab$index")
                         .selectable(selected = pager.currentPage == index, role = Role.Tab,
+                            interactionSource = interactions, indication = null,
                             onClick = { onSelect(index) }),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {

@@ -32,6 +32,32 @@ class LinksTest {
         assertEquals(desktop?.key, mobile?.key)
         assertEquals("dy:7421234567890123456", mobile?.key)
     }
+    @Test fun recognizesFeaturedModalLinkAndDeduplicatesWithCanonicalWork() {
+        val id = "7678889454471351592"
+        val link = Links.detect("https://www.douyin.com/jingxuan?modal_id=$id")!!
+        assertEquals(Platform.DOUYIN, link.platform)
+        assertEquals("https://www.douyin.com/video/$id", link.url)
+        assertEquals(Links.detect("https://www.douyin.com/video/$id")!!.key, link.key)
+        assertEquals(Links.detect("https://www.douyin.com/note/$id")!!.key, link.key)
+    }
+    @Test fun recognizesModalLinksInShareTextWithTrackingAndEncoding() {
+        val id = "7678889454471351592"
+        listOf(
+            "复制打开抖音 [作品](https://www.douyin.com/jingxuan/?from=copy&modal_id=$id&foo=bar)",
+            "https://www.douyin.com/?modal_id=$id",
+            "www.douyin.com/jingxuan?modal_id=%37${id.drop(1)}#detail"
+        ).forEach { assertEquals(it, "dy:$id", Links.detect(it)?.key) }
+    }
+    @Test fun rejectsInvalidOrAmbiguousModalLinks() {
+        val prefix = "https://www.douyin.com/jingxuan?"
+        listOf("", "modal_id=", "modal_id=12", "modal_id=-7678889454471351592",
+            "modal_id=7678889454471351592x", "modal_id=0", "modal_id=7678889454471351592&modal_id=7678889454471351593",
+            "redirect=modal_id=7678889454471351592", "foo=bar#modal_id=7678889454471351592"
+        ).forEach { assertNull(it, Links.detect(prefix + it)) }
+        assertNull(Links.detect("https://www.douyin.com.evil.com/jingxuan?modal_id=7678889454471351592"))
+        assertNull(Links.detect("https://live.douyin.com/jingxuan?modal_id=7678889454471351592"))
+        assertNull(Links.detect("https://www.douyin.com/jingxuan"))
+    }
     @Test fun acceptsB23ShortUrl() {
         assertEquals("https://b23.tv/AbC9", Links.detect("https://b23.tv/AbC9/")?.url)
     }

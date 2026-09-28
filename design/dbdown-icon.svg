@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">
+<rect width="108" height="108" rx="27" fill="#315CDE"/>
+<g transform="translate(-26.64 -23.76) scale(1.44)" fill="white" fill-rule="evenodd"><path d="M30 32 L42 32 C55 32 61 40 61 54 C61 68 55 76 42 76 L30 76 Z M39 41 L39 67 L42 67 C49 67 52 62 52 54 C52 46 49 41 42 41 Z"/><path d="M54 32 L66 32 C75 32 80 37 80 44 C80 49 77 52 74 53 C79 55 82 59 82 64 C82 72 76 76 66 76 L54 76 Z M63 40 L63 49 L66 49 C70 49 72 47 72 44.5 C72 41.5 70 40 66 40 Z M63 58 L63 68 L66 68 C71 68 74 66 74 63 C74 60 71 58 66 58 Z"/></g>
+</svg>

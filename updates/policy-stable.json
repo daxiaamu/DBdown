@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 2,
+  "policyRevision": 3,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.1: remove download tab badge and add official playback fallback"
+  "reason": "0.6.6: fluid cloud prompts, modal links, tab press feedback and DB icon"
 }
