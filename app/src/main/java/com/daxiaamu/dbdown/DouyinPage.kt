@@ -45,7 +45,9 @@ internal object DouyinPage {
         }
         val candidates = (alternates + originals).distinct()
         return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "原视频",
-            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1))
+            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1),
+            resolution = resolutionLabel(play.optInt("width", item.optJSONObject("video")?.optInt("width") ?: 0),
+                play.optInt("height", item.optJSONObject("video")?.optInt("height") ?: 0)))
     }
     private fun firstUrl(array: JSONArray?): String? = array?.let {
         (0 until it.length()).firstNotNullOfOrNull { i -> validUrl(it.optString(i)) }

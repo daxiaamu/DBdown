@@ -130,7 +130,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         clipboardSuggestion = null
         if(task == null) { notice = "这个作品已经在下载列表中"; return false }
         revealTaskId = task.id
-        store.update(task.id) { it.copy(title = info.title, quality = info.quality) }
+        store.update(task.id) { it.copy(title = info.title, quality = info.quality, resolution = info.resolution) }
         tab = 1; settings = false
         return start(task.id)
     }

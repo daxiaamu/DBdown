@@ -60,9 +60,26 @@ class UpdateSourceTest {
             assertTrue(runCatching { runBlocking { source.fetch("stable", cached) } }.isFailure)
         }
     }
+    @Test fun officialRawCanIntroduceNewVersionWhenApiIsUnavailable() = runBlocking {
+        val new = fixture(3, 15)
+        withSource(listOf(null, new, fixture(), fixture(), null)) { source ->
+            runBlocking {
+                assertEquals(15, source.fetch("stable", fixture(2, 10)).manifest.versionCode.toInt())
+                assertEquals(15, source.fetch("stable", null).manifest.versionCode.toInt())
+            }
+        }
+    }
+    @Test fun officialRawFallbackStillRejectsRollbackAndConflicts() = runBlocking {
+        withSource(listOf(null, fixture(), null, null, null)) { source ->
+            assertTrue(runCatching { runBlocking { source.fetch("stable", fixture(2, 11)) } }.isFailure)
+        }
+        withSource(listOf(null, fixture(2, 11), fixture(2, 12), null, null)) { source ->
+            assertTrue(runCatching { runBlocking { source.fetch("stable", fixture()) } }.isFailure)
+        }
+    }
     @Test fun unsignedMirrorsCannotIntroduceUnauthenticatedNewRevision() = runBlocking {
         val new = fixture(2, 11)
-        withSource(listOf(null, new, new, null, new)) { source ->
+        withSource(listOf(null, null, new, null, new)) { source ->
             assertTrue(runCatching { runBlocking { source.fetch("stable", fixture()) } }.isFailure)
         }
     }

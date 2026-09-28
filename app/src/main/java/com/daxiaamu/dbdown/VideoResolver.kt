@@ -11,7 +11,7 @@ data class VideoInfo(
     val source: VideoLink, val id: String, val title: String,
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
-    val music: String? = null, val videoFallbacks: List<String> = emptyList()
+    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = ""
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
@@ -84,7 +84,8 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
                 .filter { it.optString("codecs").startsWith("mp4a") }.maxByOrNull { it.optLong("bandwidth") }
                 ?: error("视频没有可合并的 AAC 音轨")
             return VideoInfo(canonical, canonical.key, title, streamUrl(video), streamUrl(audio),
-                "${video.optInt("height")}P", canonical.url, DESKTOP)
+                "${video.optInt("height")}P", canonical.url, DESKTOP,
+                resolution = resolutionLabel(video.optInt("width"), video.optInt("height")))
         }
         val segments = play.optJSONArray("durl") ?: error("此视频暂无可下载资源，可能需要登录或会员权限")
         check(segments.length() == 1) { "暂不支持此视频的多段 FLV 格式" }

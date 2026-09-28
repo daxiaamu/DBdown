@@ -22,7 +22,7 @@ data class DownloadTask(
     val status: TaskStatus = TaskStatus.QUEUED, val bytes: Long = 0, val total: Long = -1,
     val speed: Long = 0, val quality: String = "", val uri: String = "", val error: String = "",
     val created: Long = System.currentTimeMillis(), val albumMode: AlbumMode = AlbumMode.IMAGES,
-    val outputUris: List<String> = emptyList(), val mimeType: String = "video/mp4"
+    val outputUris: List<String> = emptyList(), val mimeType: String = "video/mp4", val resolution: String = ""
 ) {
     val progress: Float get() = if(total > 0) (bytes.toDouble()/total).toFloat().coerceIn(0f, 1f) else 0f
 }
@@ -47,7 +47,7 @@ class DownloadStore(context: Context, preferencesName: String = "downloads") {
                 error = if(state.active) "上次下载被系统中断，点击重试" else o.optString("error"), created = o.optLong("created"),
                 albumMode = runCatching { AlbumMode.valueOf(o.optString("albumMode")) }.getOrDefault(AlbumMode.IMAGES),
                 outputUris = o.optJSONArray("outputUris")?.let { a -> (0 until a.length()).map { a.getString(it) } }.orEmpty(),
-                mimeType = o.optString("mimeType", "video/mp4"))
+                mimeType = o.optString("mimeType", "video/mp4"), resolution = o.optString("resolution"))
         }
     }.getOrDefault(emptyList())
     @Synchronized fun add(link: VideoLink, albumMode: AlbumMode = AlbumMode.IMAGES): DownloadTask? {
@@ -92,7 +92,7 @@ class DownloadStore(context: Context, preferencesName: String = "downloads") {
             (it.status == TaskStatus.COMPLETED || it.status in setOf(TaskStatus.DOWNLOADING, TaskStatus.MERGING, TaskStatus.SAVING)) }) {
             error("这个视频已在下载列表中")
         }
-        update(id) { it.copy(title = info.title, key = info.id, quality = if(info.images.isEmpty()) info.quality else "${info.images.size} 张图片 · ${if(mode == AlbumMode.IMAGES) "图片" else "合成视频"}", albumMode = mode, status = TaskStatus.DOWNLOADING) }
+        update(id) { it.copy(title = info.title, key = info.id, quality = if(info.images.isEmpty()) info.quality else "${info.images.size} 张图片 · ${if(mode == AlbumMode.IMAGES) "图片" else "合成视频"}", albumMode = mode, resolution = info.resolution, status = TaskStatus.DOWNLOADING) }
         return true
     }
     private fun persist() {
@@ -101,7 +101,7 @@ class DownloadStore(context: Context, preferencesName: String = "downloads") {
             put("id", t.id); put("source", t.source); put("key", t.key); put("platform", t.platform.name)
             put("title", t.title); put("status", t.status.name); put("bytes", t.bytes); put("total", t.total)
             put("albumMode", t.albumMode.name); put("outputUris", JSONArray(t.outputUris)); put("mimeType", t.mimeType)
-            put("quality", t.quality); put("uri", t.uri); put("error", t.error); put("created", t.created)
+            put("resolution", t.resolution); put("quality", t.quality); put("uri", t.uri); put("error", t.error); put("created", t.created)
         }) }
         prefs.edit().putBoolean("paused", _paused.value).putString("tasks", array.toString()).apply()
     }

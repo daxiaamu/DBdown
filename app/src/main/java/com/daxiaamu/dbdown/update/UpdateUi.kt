@@ -34,23 +34,38 @@ import java.time.format.FormatStyle
 import java.util.Locale
 
 @Composable fun AboutUpdateCard() {
-    val manager = (LocalContext.current.applicationContext as DownloaderApp).updates
+    val context = LocalContext.current
+    val manager = (context.applicationContext as DownloaderApp).updates
     val state by manager.state.collectAsStateWithLifecycle()
     Text("关于", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Surface(shape = RoundedCornerShape(22.dp), modifier = Modifier.testTag("aboutUpdate")) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("逗逼下载器 · DBDown", style = MaterialTheme.typography.titleMedium)
-                Text("版本 ${manager.versionName}", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column {
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("逗逼下载器 · DBDown", style = MaterialTheme.typography.titleMedium)
+                    Text("版本 ${manager.versionName}", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Box(Modifier.size(64.dp, 48.dp), contentAlignment = Alignment.Center) {
+                    if(state.checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else TextButton(onClick = { manager.check(true) }, modifier = Modifier.fillMaxSize().testTag("checkUpdate"),
+                        contentPadding = PaddingValues(0.dp)) { Text("检查更新", fontSize = 13.sp) }
+                    if(state.redDot) Box(Modifier.align(Alignment.TopEnd).padding(top = 3.dp).size(6.dp)
+                        .background(MaterialTheme.colorScheme.error, CircleShape))
+                }
             }
-            Box(Modifier.size(64.dp, 48.dp), contentAlignment = Alignment.Center) {
-                if(state.checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else TextButton(onClick = { manager.check(true) }, modifier = Modifier.fillMaxSize().testTag("checkUpdate"),
-                    contentPadding = PaddingValues(0.dp)) { Text("检查更新", fontSize = 13.sp) }
-                if(state.redDot) Box(Modifier.align(Alignment.TopEnd).padding(top = 3.dp).size(6.dp)
-                    .background(MaterialTheme.colorScheme.error, CircleShape))
+            HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            Surface(onClick = {
+                runCatching {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse("https://github.com/${com.daxiaamu.dbdown.BuildConfig.UPDATE_REPOSITORY}")))
+                }.onFailure { Toast.makeText(context, "没有可以打开项目页的应用", Toast.LENGTH_SHORT).show() }
+            }, modifier = Modifier.testTag("openSource")) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("开放源代码", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    com.daxiaamu.dbdown.Glyph("arrow")
+                }
             }
         }
     }

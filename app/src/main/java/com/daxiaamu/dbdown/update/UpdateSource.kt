@@ -46,7 +46,12 @@ class UpdateSource internal constructor(private val repository: String, private 
             catch(_: Exception) { null }
         } }
         try {
-            val authority = jobs.first().await()
+            val apiAuthority = jobs.first().await()
+            // GitHub Raw is another HTTPS endpoint of the same repository authority,
+            // not an unauthenticated third-party mirror. API outages must not disable it.
+            val rawAuthority = if(apiAuthority == null) endpoints.indexOfFirst { it.family == "github" }
+                .takeIf { it >= 0 }?.let { jobs[it].await() } else null
+            val authority = apiAuthority ?: rawAuthority
             if(authority != null) delay(600) else jobs.awaitAll()
             val replies = jobs.mapIndexedNotNull { index, job ->
                 if(job.isCompleted && !job.isCancelled) job.await()?.let { endpoints[index] to it } else null
@@ -57,7 +62,7 @@ class UpdateSource internal constructor(private val repository: String, private 
                 // All jsDelivr ingress hosts count as one provider, not independent votes.
                 val eligible = replies.filter { (_, p) -> previous != null &&
                     p.revision == previous.pointer.revision && p.sha256 == previous.pointer.sha256 }
-                require(eligible.map { it.first.family }.distinct().size >= 2) { "更新源暂不可用或尚未发布更新，请稍后重试" }
+                require(eligible.map { it.first.family }.distinct().size >= 2) { "检查更新失败，请稍后重试" }
                 eligible.first().second
             }
             if(previous != null) {

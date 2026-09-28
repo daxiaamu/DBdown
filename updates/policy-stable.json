@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 3,
+  "policyRevision": 4,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.6: fluid cloud prompts, modal links, tab press feedback and DB icon"
+  "reason": "0.6.7: update fallback, source link and resolution cards"
 }

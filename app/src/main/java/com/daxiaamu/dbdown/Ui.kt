@@ -79,6 +79,11 @@ private val Night = darkColorScheme(
     ), content = content)
 }
 private val paths = mapOf(
+    "completed" to "M22,12 A10,10 0,1 1,2,12 A10,10 0,1 1,22,12 M7,12 L10.5,15.5 L17,8.5",
+    "clock" to "M22,12 A10,10 0,1 1,2,12 A10,10 0,1 1,22,12 M12,6 L12,12 L16,14",
+    "search" to "M17,10 A7,7 0,1 1,3,10 A7,7 0,1 1,17,10 M15,15 L21,21",
+    "layers" to "M3,8 L12,3 L21,8 L12,13 Z M3,12 L12,17 L21,12 M3,16 L12,21 L21,16",
+    "error" to "M22,12 A10,10 0,1 1,2,12 A10,10 0,1 1,22,12 M12,6 L12,13 M12,17 L12,18",
     "home" to "M3,10 L12,3 L21,10 L21,21 L15,21 L15,14 L9,14 L9,21 L3,21 Z",
     "download" to "M12,3 L12,15 M6,9 L12,15 L18,9 M4,16 L4,21 L20,21 L20,16",
     "settings" to "M9,3 L15,3 L16,6 L19,7 L22,10 L20,13 L20,17 L17,20 L13,20 L10,22 L7,20 L6,17 L3,15 L3,9 L6,7 Z M15.5,12 A3.5,3.5 0,1 1,8.5,12 A3.5,3.5 0,1 1,15.5,12",
@@ -368,11 +373,19 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     val scope = rememberCoroutineScope()
     var sharing by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    LaunchedEffect(task.uri, task.status) {
+        if(task.status == TaskStatus.COMPLETED && task.uri.isNotBlank()) {
+            val measured = withContext(Dispatchers.IO) { savedResolution(context, task) }
+            if(measured.isNotEmpty() && measured != task.resolution) vm.store.update(task.id) {
+                if(it.uri == task.uri && it.status == TaskStatus.COMPLETED) it.copy(resolution = measured) else it
+            }
+        }
+    }
     Surface(modifier = Modifier.testTag("download-${task.id}"), shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface) {
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("${task.platform.label}  ·  ${task.quality.ifBlank { task.status.label }}",
+                    Text(task.platform.label + if(task.quality.contains("张图片")) " · ${task.quality}" else "",
                         color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                     Text(task.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -401,10 +414,28 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             if(task.error.isNotEmpty()) Text(task.error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(task.status.label + if(task.status == TaskStatus.DOWNLOADING && task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
-                        style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                        val icon = when(task.status) {
+                            TaskStatus.COMPLETED -> "completed"
+                            TaskStatus.PAUSED -> "pause"
+                            TaskStatus.QUEUED -> "clock"
+                            TaskStatus.RESOLVING -> "search"
+                            TaskStatus.MERGING -> "layers"
+                            TaskStatus.DOWNLOADING, TaskStatus.SAVING -> "download"
+                            TaskStatus.CANCELLED -> "close"
+                            TaskStatus.FAILED, TaskStatus.INTERRUPTED -> "error"
+                        }
+                        Glyph(icon, task.status.label, tint = when(task.status) {
+                            TaskStatus.COMPLETED -> if(isSystemInDarkTheme()) Color(0xFF80D6A3) else Color(0xFF26854B)
+                            TaskStatus.FAILED, TaskStatus.INTERRUPTED -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        })
+                        Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
+                            style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     if(task.bytes > 0 || task.status == TaskStatus.DOWNLOADING) {
-                        Text(formatBytes(task.bytes) + if(task.status == TaskStatus.DOWNLOADING) " · ${formatBytes(task.speed)}/s" else "",
+                        Text(formatBytes(task.bytes) + if(task.status == TaskStatus.DOWNLOADING) " · ${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "" else "",
                             style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
