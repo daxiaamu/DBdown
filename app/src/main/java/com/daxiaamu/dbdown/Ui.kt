@@ -1,5 +1,14 @@
 package com.daxiaamu.dbdown
 
+import dev.chrisbanes.haze.HazeProgressive
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.FastOutSlowInEasing
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.hazeEffect
+import androidx.compose.ui.unit.Dp
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
@@ -112,9 +121,21 @@ private val paths = mapOf(
     Icon(vector, contentDescription = description, modifier = modifier.size(22.dp), tint = tint)
 }
 
+@Composable private fun appGlassStyle() = HazeStyle(
+    backgroundColor = MaterialTheme.colorScheme.background,
+    tint = HazeTint(MaterialTheme.colorScheme.background.copy(alpha = 0.58f)),
+    blurRadius = 14.dp, noiseFactor = 0f
+)
+
 @Composable fun DownloaderScreen(vm: MainViewModel, requestNotifications: () -> Unit, checkClipboard: () -> Unit) {
+    AccountExpiryPrompt { vm.inputVisible = false; vm.settings = true }
     val tasks by vm.store.tasks.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val haze = remember { HazeState() }
+    val dialogHaze = remember { HazeState() }
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp
+    val blurFadeStart = with(LocalDensity.current) { (topInset - 20.dp).toPx() }
+    val blurFadeEnd = with(LocalDensity.current) { (topInset + 24.dp).toPx() }
     val pager = rememberPagerState(initialPage = vm.tab) { 2 }
     LaunchedEffect(vm.tabRequest) {
         if(vm.tabRequest != vm.consumedTabRequest) {
@@ -143,27 +164,17 @@ private val paths = mapOf(
             })
         }, open = { suggestion?.let { vm.openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-            Column(Modifier.fillMaxSize()) {
-                Row(Modifier.fillMaxWidth().height(72.dp).padding(horizontal = 20.dp),
-                    verticalAlignment = Alignment.CenterVertically) {
-                    if(vm.settings) {
-                        IconButton(onClick = { vm.settings = false }) { Glyph("back", "返回") }
-                        Text("设置", style = MaterialTheme.typography.titleLarge)
-                    } else {
-                        Text(if(pager.currentPage == 0) androidx.compose.ui.res.stringResource(R.string.app_name) else "下载", style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.weight(1f))
-                        IconButton(onClick = { vm.settings = true }) { Glyph("settings", "设置") }
-                    }
-                }
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
+            Box(Modifier.fillMaxSize().hazeSource(haze)
+                .then(if(vm.inputVisible) Modifier.hazeSource(dialogHaze) else Modifier)) {
                 if(vm.settings) {
-                    SettingsPage(vm) { enabled -> vm.setClipboard(enabled); if(enabled) checkClipboard() }
+                    SettingsPage(vm, topInset) { enabled -> vm.setClipboard(enabled); if(enabled) checkClipboard() }
                 } else HorizontalPager(
                     state = pager, modifier = Modifier.fillMaxSize().testTag("pages"),
                     beyondViewportPageCount = 1, key = { it }
                 ) { page ->
                     if(page == 0) {
-                    Box(Modifier.fillMaxSize().testTag("homePage").padding(horizontal = 28.dp).padding(bottom = 120.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxSize().testTag("homePage").padding(top = topInset).padding(horizontal = 28.dp).padding(bottom = 120.dp), contentAlignment = Alignment.Center) {
                         Surface(onClick = { vm.openInput() }, modifier = Modifier.widthIn(max = 540.dp).fillMaxWidth().height(66.dp),
                             shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface,
                             shadowElevation = 2.dp) {
@@ -175,20 +186,40 @@ private val paths = mapOf(
                             }
                         }
                     }
-                } else DownloadsPage(tasks, vm, requestNotifications)
+                } else DownloadsPage(tasks, vm, requestNotifications, topInset)
                 }
             }
+            // Extend just the backdrop; layout and touch targets keep their original bounds.
+            Box(Modifier.fillMaxWidth().height(topInset + 24.dp).hazeEffect(haze, style = appGlassStyle()) {
+                progressive = HazeProgressive.verticalGradient(
+                    startY = blurFadeStart, startIntensity = 1f,
+                    endY = blurFadeEnd, endIntensity = 0f,
+                    easing = FastOutSlowInEasing
+                )
+            })
+                Row(Modifier.fillMaxWidth().statusBarsPadding().height(72.dp).padding(horizontal = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    if(vm.settings) {
+                        IconButton(onClick = { vm.settings = false }) { Glyph("back", "返回") }
+                        Text("设置", style = MaterialTheme.typography.titleLarge)
+                    } else {
+                        Text(if(pager.currentPage == 0) androidx.compose.ui.res.stringResource(R.string.app_name) else "下载", style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.weight(1f))
+                        IconButton(onClick = { vm.settings = true }) { Glyph("settings", "设置") }
+                    }
+                }
             if(!vm.settings) {
                 FloatingTabs(pager,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
             AnimatedVisibility(suggestion != null,
-                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).padding(top = if(ClipboardLivePrompt.avoidSystemIsland) 96.dp else 8.dp),
+                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).padding(top = topInset - 72.dp + if(ClipboardLivePrompt.avoidSystemIsland) 96.dp else 8.dp),
                 enter = slideInVertically(tween(220)) { -it } + fadeIn(),
                 exit = slideOutVertically(tween(180)) { -it } + fadeOut()) {
                 vm.clipboardSuggestion?.let { info ->
                     Surface(shape = RoundedCornerShape(24.dp), shadowElevation = 12.dp,
-                        color = MaterialTheme.colorScheme.surface, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
+                        color = Color.Transparent, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()
+                            .clip(RoundedCornerShape(24.dp)).hazeEffect(haze, style = appGlassStyle())) {
                         Column(Modifier.padding(start = 18.dp, end = 10.dp, top = 10.dp, bottom = 8.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
@@ -211,12 +242,12 @@ private val paths = mapOf(
             }
         }
     }
-    if(vm.inputVisible) LinkDialog(vm) { if(vm.submit()) requestNotifications() }
+    if(vm.inputVisible) LinkDialog(vm, dialogHaze) { if(vm.submit()) requestNotifications() }
     DeleteTasksDialog(vm)
     com.daxiaamu.dbdown.update.UpdateOverlay()
 }
 
-@Composable private fun LinkDialog(vm: MainViewModel, submit: () -> Unit) {
+@Composable private fun LinkDialog(vm: MainViewModel, haze: HazeState, submit: () -> Unit) {
     val context = LocalContext.current
     val detected = remember(vm.input) { Links.detect(vm.input) }
     val focus = remember { FocusRequester() }
@@ -248,8 +279,9 @@ private val paths = mapOf(
                         Text("添加下载", style = MaterialTheme.typography.titleLarge)
                         AnimatedVisibility(candidate != null, enter = slideInVertically { -it } + fadeIn(), exit = fadeOut()) {
                             candidate?.let { text ->
-                                Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 8.dp,
-                                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")) {
+                                Surface(shape = RoundedCornerShape(22.dp), shadowElevation = 8.dp, color = Color.Transparent,
+                                    modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")
+                                        .clip(RoundedCornerShape(22.dp)).hazeEffect(haze, style = appGlassStyle())) {
                                     Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
                                         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
@@ -309,7 +341,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     if(clip.itemCount == 0) null else clip.getItemAt(0).text?.toString()?.take(16000)
 }.getOrNull()
 
-@Composable private fun DownloadsPage(tasks: List<DownloadTask>, vm: MainViewModel, requestNotifications: () -> Unit) {
+@Composable private fun DownloadsPage(tasks: List<DownloadTask>, vm: MainViewModel, requestNotifications: () -> Unit, topInset: Dp) {
     var filter by rememberSaveable { mutableIntStateOf(0) }
     val listState = rememberLazyListState()
     val revealTaskId = vm.revealTaskId
@@ -327,8 +359,10 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
         2 -> tasks.filter { it.status == TaskStatus.COMPLETED }
         else -> tasks
     }
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("downloadList"),
+        contentPadding = PaddingValues(top = topInset, bottom = 110.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item(key = "queueControls") { Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
             if(tasks.any { it.status.pending }) FilledTonalIconButton(onClick = {
                 if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
@@ -340,13 +374,15 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 Glyph("trash", "清空下载记录")
             }
         }
-        Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        }
+        item(key = "filters") { Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("全部", "进行中", "已完成").forEachIndexed { index, title ->
                 FilterChip(selected = filter == index, onClick = { filter = index }, label = { Text(title) }, shape = CircleShape)
             }
         }
-        if(filtered.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(bottom = 112.dp), horizontalAlignment = Alignment.CenterHorizontally,
+        }
+        if(filtered.isEmpty()) { item(key = "empty") {
+            Column(Modifier.fillParentMaxHeight(0.65f).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center) {
                 Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                     Box(Modifier.size(76.dp), contentAlignment = Alignment.Center) {
@@ -362,9 +398,8 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = { vm.openInput() }) { Text("添加链接") }
             }
-        } else LazyColumn(state = listState, modifier = Modifier.testTag("downloadList"), contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 14.dp, bottom = 110.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            items(filtered, key = { it.id }) { task -> DownloadCard(task, vm, requestNotifications) }
+        } } else items(filtered, key = { it.id }) { task ->
+            Box(Modifier.padding(horizontal = 24.dp)) { DownloadCard(task, vm, requestNotifications) }
         }
     }
 }
@@ -385,8 +420,17 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text(task.platform.label + if(task.quality.contains("张图片")) " · ${task.quality}" else "",
-                        color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(task.platform.label + if(task.quality.contains("张图片")) " · ${task.quality}" else "",
+                            modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                        if(task.bytes > 0 || task.status == TaskStatus.DOWNLOADING) {
+                            Text(formatBytes(task.bytes), maxLines = 1,
+                                style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                     Text(task.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 Box {
@@ -434,8 +478,8 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                             style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if(task.bytes > 0 || task.status == TaskStatus.DOWNLOADING) {
-                        Text(formatBytes(task.bytes) + if(task.status == TaskStatus.DOWNLOADING) " · ${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "" else "",
+                    if(task.status == TaskStatus.DOWNLOADING) {
+                        Text("${formatBytes(task.speed)}/s" + if(task.total > 0) " · ${(task.progress*100).toInt()}%" else "",
                             style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -507,7 +551,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
         }, dismissButton = { TextButton(onClick = vm::dismissDeletion, enabled = !vm.deleting) { Text("取消") } })
 }
 
-@Composable private fun SettingsPage(vm: MainViewModel, onClipboard: (Boolean) -> Unit) {
+@Composable private fun SettingsPage(vm: MainViewModel, topInset: Dp, onClipboard: (Boolean) -> Unit) {
     val context = LocalContext.current
     val parallelism by vm.store.parallelism.collectAsStateWithLifecycle()
     var selectParallelism by remember { mutableStateOf(false) }
@@ -524,7 +568,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 }
             }
         } }, confirmButton = {}, dismissButton = { TextButton(onClick = { selectParallelism = false }) { Text("取消") } })
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(24.dp),
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = topInset).padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp)) {
         Text("下载", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(onClick = { selectParallelism = true }, shape = RoundedCornerShape(22.dp),

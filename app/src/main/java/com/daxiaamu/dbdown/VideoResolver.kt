@@ -22,6 +22,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
             .readTimeout(40, TimeUnit.SECONDS).callTimeout(60, TimeUnit.SECONDS).build()
     }
     suspend fun resolve(link: VideoLink): VideoInfo = withContext(Dispatchers.IO) {
+        WebAccounts.refresh(true)
         val actual = expand(link)
         when(actual.platform) {
             Platform.BILI -> bili(actual)
@@ -95,6 +96,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
     }
     private fun api(text: String): JSONObject {
         val obj = JSONObject(text)
+        if(obj.optInt("code") == -101) WebAccounts.refresh(true)
         check(obj.optInt("code", -1) == 0) {
             when(obj.optInt("code")) {
                 -404 -> "视频不存在或已删除"

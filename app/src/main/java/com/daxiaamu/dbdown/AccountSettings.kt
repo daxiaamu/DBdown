@@ -12,7 +12,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
 @Composable fun AccountSettings() {
     val context = LocalContext.current
-    val accounts by WebAccounts.accounts.collectAsStateWithLifecycle()
+    val statuses by WebAccounts.statuses.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { WebAccounts.refresh(true) }
     var confirmClear by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
     Text("平台账号", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -22,12 +23,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if(platform == Platform.BILI) "哔哩哔哩" else "抖音", style = MaterialTheme.typography.titleMedium)
-                        Text(if(accounts[platform] == true) "已保存登录状态" else "未登录",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text((statuses[platform] ?: AccountStatus.CHECKING).label,
+                            style = MaterialTheme.typography.bodySmall, color = if(statuses[platform] == AccountStatus.EXPIRED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(enabled = !clearing, onClick = {
                         context.startActivity(Intent(context, LoginActivity::class.java).putExtra("platform", platform.name))
-                    }) { Text(if(accounts[platform] == true) "管理登录" else "网页登录") }
+                    }) { Text(when(statuses[platform]) { AccountStatus.EXPIRED -> "重新登录"; AccountStatus.VALID -> "管理登录"; else -> "网页登录" }) }
                 }
                 if(platform == Platform.BILI) HorizontalDivider()
             }
@@ -50,4 +51,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
             }) { Text("清除") }
         },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("取消") } })
+}
+
+@Composable fun AccountExpiryPrompt(onSettings: () -> Unit) {
+    val expired by WebAccounts.expiredPrompt.collectAsStateWithLifecycle()
+    if(expired.isNotEmpty()) AlertDialog(
+        onDismissRequest = WebAccounts::dismissExpiry,
+        title = { Text("登录已失效") },
+        text = { Text(expired.joinToString("、") { it.label } + "登录已失效，请前往设置重新登录。") },
+        confirmButton = { TextButton(onClick = { WebAccounts.dismissExpiry(); onSettings() }) { Text("前往设置") } },
+        dismissButton = { TextButton(onClick = WebAccounts::dismissExpiry) { Text("忽略") } })
 }

@@ -109,5 +109,5 @@ class DownloadStore(context: Context, preferencesName: String = "downloads") {
 class DownloaderApp : Application() {
     lateinit var updates: com.daxiaamu.dbdown.update.UpdateManager
     lateinit var store: DownloadStore
-    override fun onCreate() { super.onCreate(); WebAccounts.initialize(); store = DownloadStore(this); updates = com.daxiaamu.dbdown.update.UpdateManager(this) }
+    override fun onCreate() { super.onCreate(); WebAccounts.initialize(this); store = DownloadStore(this); updates = com.daxiaamu.dbdown.update.UpdateManager(this) }
 }

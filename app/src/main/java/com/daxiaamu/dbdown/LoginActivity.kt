@@ -50,7 +50,7 @@ class LoginActivity : ComponentActivity() {
         }
     }
     @Composable private fun LoginToolbar() {
-        val accounts by WebAccounts.accounts.collectAsState()
+        val statuses by WebAccounts.statuses.collectAsState()
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             TextButton(onClick = { finish() }) { Text("返回") }
             Text(if(platform == Platform.BILI) "哔哩哔哩登录" else "抖音登录",
@@ -61,7 +61,8 @@ class LoginActivity : ComponentActivity() {
         Text(host, modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
         Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text(if(message.isNotEmpty()) message
-                else if(accounts[platform] == true) "已保存登录凭据，下载时由平台验证有效性"
+                else if(statuses[platform] == AccountStatus.EXPIRED) "登录已失效，请在官网重新登录"
+                else if(statuses[platform] == AccountStatus.VALID) "已登录"
                 else "请在官网完成登录，然后点右上角「完成」",
                 style = MaterialTheme.typography.bodySmall,
                 color = if(message.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)

@@ -1,5 +1,10 @@
 package com.daxiaamu.dbdown
 
+import android.content.Context
+import android.content.SharedPreferences
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import kotlinx.coroutines.*
@@ -19,40 +24,104 @@ object WebAccounts {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
     private val refreshing = AtomicBoolean(false)
-    fun initialize() {
+    private lateinit var prefs: SharedPreferences
+    private val statusState = MutableStateFlow<Map<Platform, AccountStatus>>(emptyMap())
+    val statuses = statusState.asStateFlow()
+    private val promptState = MutableStateFlow<Set<Platform>>(emptySet())
+    val expiredPrompt = promptState.asStateFlow()
+    private val dismissed = java.util.concurrent.ConcurrentHashMap.newKeySet<Platform>()
+    private val recheck = AtomicBoolean(false)
+    private var lastCheck = 0L
+    private val checker = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(8, TimeUnit.SECONDS).callTimeout(12, TimeUnit.SECONDS)
+        .followRedirects(false).build()
+    fun initialize(context: Context) {
         manager = CookieManager.getInstance()
         manager.setAcceptCookie(true)
+        prefs = context.getSharedPreferences("account_validity", Context.MODE_PRIVATE)
         refresh()
     }
-    /** CookieManager can wait for Chromium's cookie thread. Never do that on the UI thread. */
-    fun refresh() {
-        if(!refreshing.compareAndSet(false, true)) return
+    private fun url(platform: Platform) = if(platform == Platform.BILI)
+        "https://www.bilibili.com/" else "https://www.douyin.com/"
+    private fun hasSession(platform: Platform, raw: String): Boolean {
+        val names = if(platform == Platform.BILI) setOf("SESSDATA") else setOf("sessionid", "sessionid_ss", "sid_guard")
+        return raw.split(';').any { it.trim().substringBefore('=') in names && it.substringAfter('=', "").isNotBlank() }
+    }
+    /** Cookie and network I/O never run on the UI thread. */
+    fun refresh(force: Boolean = false) {
+        if(!refreshing.compareAndSet(false, true)) { if(force) recheck.set(true); return }
         scope.launch {
-            try { mutex.withLock { readState() } }
-            finally { refreshing.set(false) }
+            try { mutex.withLock {
+                val now = android.os.SystemClock.elapsedRealtime()
+                val check = force || lastCheck == 0L || now - lastCheck >= 300_000L
+                for(platform in Platform.entries) {
+                    val raw = manager.getCookie(url(platform)).orEmpty()
+                    val present = hasSession(platform, raw)
+                    state.value = state.value + (platform to present)
+                    val known = prefs.getBoolean(platform.name + "_seen", false)
+                    if(!present) {
+                        publish(platform, if(known) AccountStatus.EXPIRED else AccountStatus.SIGNED_OUT)
+                        continue
+                    }
+                    prefs.edit().putBoolean(platform.name + "_seen", true).apply()
+                    if(!check && statusState.value[platform] != null) continue
+                    val wasExpired = prefs.getBoolean(platform.name + "_expired", false)
+                    publish(platform, if(wasExpired) AccountStatus.EXPIRED else AccountStatus.CHECKING)
+                    val endpoint = if(platform == Platform.BILI) "https://api.bilibili.com/x/web-interface/nav"
+                        else "https://www.douyin.com/passport/web/account/info/?aid=1128"
+                    val cookie = manager.getCookie(endpoint).orEmpty()
+                    val verdict = runCatching {
+                        checker.newCall(Request.Builder().url(endpoint).header("Cookie", cookie)
+                            .header("Referer", url(platform)).header("User-Agent", VideoResolver.DESKTOP).build())
+                            .execute().use { response ->
+                                if(response.isSuccessful) accountVerdict(platform, response.body?.string().orEmpty())
+                                else AccountStatus.UNKNOWN
+                            }
+                    }.getOrDefault(AccountStatus.UNKNOWN)
+                    // A WebView login may change credentials while the request is in flight.
+                    if(manager.getCookie(url(platform)).orEmpty() == raw) {
+                        publish(platform, if(verdict == AccountStatus.UNKNOWN && wasExpired) AccountStatus.EXPIRED else verdict)
+                    } else { recheck.set(true) }
+                }
+                if(check) lastCheck = now
+            } } finally { refreshing.set(false); if(recheck.getAndSet(false)) refresh(true) }
         }
     }
-    private fun readState() {
-        state.value = mapOf(
-            Platform.BILI to hasCookie("https://www.bilibili.com/", setOf("SESSDATA")),
-            Platform.DOUYIN to hasCookie("https://www.douyin.com/", setOf("sessionid", "sessionid_ss", "sid_guard"))
-        )
-    }
-    private fun hasCookie(url: String, names: Set<String>) =
-        manager.getCookie(url).orEmpty().split(';').any {
-            it.trim().substringBefore('=') in names && it.substringAfter('=', "").isNotBlank()
+    private fun publish(platform: Platform, status: AccountStatus) {
+        statusState.value = statusState.value + (platform to status)
+        if(status == AccountStatus.EXPIRED) {
+            prefs.edit().putBoolean(platform.name + "_expired", true).apply()
+            if(platform !in dismissed) promptState.value = promptState.value + platform
+        } else if(status == AccountStatus.VALID || status == AccountStatus.SIGNED_OUT) {
+            prefs.edit().remove(platform.name + "_expired").apply()
+            dismissed.remove(platform)
+            promptState.value = promptState.value - platform
         }
-    /** Flush does disk I/O; completion and lifecycle callbacks must return immediately. */
+    }
+    fun dismissExpiry() {
+        dismissed.addAll(promptState.value); promptState.value = emptySet()
+    }
     fun flush() {
-        scope.launch { mutex.withLock { manager.flush(); readState() } }
+        scope.launch {
+            mutex.withLock { manager.flush(); lastCheck = 0L }
+            refresh(true)
+        }
     }
     fun clearAll(done: () -> Unit) {
-        manager.removeAllCookies {
-            WebStorage.getInstance().deleteAllData()
-            scope.launch {
-                mutex.withLock { manager.flush(); readState() }
-                withContext(Dispatchers.Main) { done() }
+        scope.launch {
+            mutex.withLock {
+                withContext(Dispatchers.Main) {
+                    suspendCancellableCoroutine<Unit> { continuation ->
+                        manager.removeAllCookies { continuation.resume(Unit) { _, _, _ -> } }
+                        WebStorage.getInstance().deleteAllData()
+                    }
+                }
+                manager.flush(); prefs.edit().clear().apply()
+                dismissed.clear(); promptState.value = emptySet(); state.value = emptyMap()
+                statusState.value = Platform.entries.associateWith { AccountStatus.SIGNED_OUT }
+                lastCheck = 0L
             }
+            withContext(Dispatchers.Main) { done() }
         }
     }
     fun cookies(url: HttpUrl): List<Cookie> {

@@ -95,7 +95,7 @@ import java.util.Locale
                         Text(if(required) "需要更新" else "发现新版本", style = MaterialTheme.typography.titleLarge)
                         Text(manifest.versionName, style = MaterialTheme.typography.titleMedium)
                         manifest.publishedAt?.let { instant ->
-                            val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
+                            val locale = LocalConfiguration.current.locales[0] ?: Locale.ROOT
                             val formatted = remember(instant, locale, ZoneId.systemDefault()) {
                                 DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
                                     .withLocale(locale).withZone(ZoneId.systemDefault()).format(instant)

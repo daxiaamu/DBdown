@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 4,
+  "policyRevision": 5,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.7: update fallback, source link and resolution cards"
+  "reason": "0.6.8: R8 optimization, account expiry alerts and progressive backdrop blur"
 }

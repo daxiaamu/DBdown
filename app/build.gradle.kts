@@ -10,8 +10,8 @@ android {
         minSdk = 33
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 16
-        versionName = "0.6.7"
+        versionCode = 17
+        versionName = "0.6.8"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"daxiaamu/DBdown\"")
         buildConfigField("String", "UPDATE_BRANCH", "\"main\"")
     }
@@ -25,6 +25,9 @@ android {
     buildTypes {
         release {
             isDebuggable = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
             if(signingPath != null) signingConfig = signingConfigs.getByName("distribution")
         }
     }
@@ -35,6 +38,7 @@ android {
     }
 }
 dependencies {
+    implementation("dev.chrisbanes.haze:haze:1.7.3")
     implementation(platform("androidx.compose:compose-bom:2026.02.01"))
     implementation("androidx.activity:activity-compose:1.12.3")
     implementation("androidx.compose.material3:material3")
