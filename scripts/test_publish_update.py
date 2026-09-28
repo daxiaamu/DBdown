@@ -28,6 +28,17 @@ class PublicationTests(unittest.TestCase):
     def test_redirect_cannot_downgrade_or_embed_credentials(self):
         for url in ["http://example.com/a.apk", "https://user:pass@example.com/a.apk", "file:///tmp/a.apk"]:
             with self.assertRaises(ValueError): publisher.secure_url(url)
+    def test_metadata_revision_requires_identical_apk(self):
+        old = self.manifest()
+        policy = dict(policyRevision=2, maxForcedVersionCode=0)
+        publisher.validate_advance(old, policy, 10, "0.6.1", "a"*64, 500)
+        for code, name, digest, size in [(9, "0.6.0", "a"*64, 500), (10, "0.6.2", "a"*64, 500),
+                                         (10, "0.6.1", "b"*64, 500), (10, "0.6.1", "a"*64, 501)]:
+            with self.assertRaises(ValueError): publisher.validate_advance(old, policy, code, name, digest, size)
+        with self.assertRaises(ValueError): publisher.validate_advance(old, dict(policyRevision=1, maxForcedVersionCode=0), 10, "0.6.1", "a"*64, 500)
+        old["maxForcedVersionCode"] = 5
+        with self.assertRaises(ValueError): publisher.validate_advance(old, policy, 11, "0.6.2", "b"*64, 600)
+
     def test_time_requires_timezone(self):
         data = self.manifest(); data["publishedAt"] = "2026-09-27T12:00:00"
         with self.assertRaises(ValueError): publisher.validate_manifest(data)

@@ -138,6 +138,15 @@ def atomic_write(path, raw):
     temporary.write_bytes(raw)
     temporary.replace(path)
 
+def validate_advance(old, policy, code, name, digest, size):
+    if policy["policyRevision"] <= old["policyRevision"] or code < old["versionCode"]:
+        raise ValueError("Increment policyRevision and never roll back APK versionCode")
+    if code == old["versionCode"] and (name != old["versionName"] or digest != old["sha256"] or size != old["size"]):
+        raise ValueError("Metadata-only revisions must keep the exact published APK")
+    if policy["maxForcedVersionCode"] < old["maxForcedVersionCode"]:
+        raise ValueError("Cannot reduce durable forced boundary")
+
+
 def main():
     if "--validate-only" in sys.argv:
         validate_generated()
@@ -185,10 +194,7 @@ def main():
         if previous_path.exists():
             old_pointer = json.loads(previous_path.read_text(encoding="utf-8"))
             old = json.loads((ROOT / old_pointer["manifestPath"]).read_text(encoding="utf-8"))
-            if policy["policyRevision"] <= old["policyRevision"] or code <= old["versionCode"]:
-                raise ValueError("Increment policyRevision and APK versionCode before publishing")
-            if policy["maxForcedVersionCode"] < old["maxForcedVersionCode"]:
-                raise ValueError("Cannot reduce durable forced boundary")
+            validate_advance(old, policy, code, name, digest, size)
         if not 0 <= policy["maxForcedVersionCode"] < code:
             raise ValueError("Invalid forced boundary")
 

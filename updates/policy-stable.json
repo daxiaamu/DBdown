@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 5,
+  "policyRevision": 6,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.8: R8 optimization, account expiry alerts and progressive backdrop blur"
+  "reason": "Refresh 0.6.8 release notes with project recommendation"
 }
