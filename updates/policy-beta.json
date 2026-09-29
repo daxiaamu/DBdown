@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 4,
+  "policyRevision": 5,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.3: smooth vertical announcements and link underlines"
+  "reason": "0.6.15-beta.4: separate media actions and compact queue toolbar"
 }

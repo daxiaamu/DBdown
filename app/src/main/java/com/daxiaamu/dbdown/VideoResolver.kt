@@ -14,6 +14,13 @@ data class VideoInfo(
     val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false
 )
 
+internal val VideoInfo.saveActionLabel: String
+    get() = when {
+        images.isEmpty() -> "下载"
+        separateAlbumMusic && !music.isNullOrBlank() -> "保存图片和配乐"
+        else -> "保存图片"
+    }
+
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
     companion object {
         const val DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36"

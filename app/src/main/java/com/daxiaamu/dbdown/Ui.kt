@@ -9,7 +9,6 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.hazeEffect
 import androidx.compose.ui.unit.Dp
-import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -106,6 +105,8 @@ private val paths = mapOf(
     "check" to "M5,12 L10,17 L20,7",
     "share" to "M8.5,10.5 L15.5,6.5 M8.5,13.5 L15.5,17.5 M9,12 A3,3 0,1 1,3,12 A3,3 0,1 1,9,12 M21,5 A3,3 0,1 1,15,5 A3,3 0,1 1,21,5 M21,19 A3,3 0,1 1,15,19 A3,3 0,1 1,21,19",
     "pause" to "M8,5 L8,19 M16,5 L16,19",
+    "image" to "M3,3 L21,3 L21,21 L3,21 Z M3,17 L9,11 L14,16 L17,13 L21,17 M15,7 L15,8",
+    "music" to "M10,17 L10,5 L20,3 L20,15 M10,9 L20,7 M10,17 C10,21 3,22 3,18 C3,15 10,14 10,17 M20,15 C20,19 13,20 13,16 C13,13 20,12 20,15",
     "play" to "M8,5 L19,12 L8,19 Z",
     "retry" to "M4,10 A8,8 0,1 1,5,18 M4,4 L4,10 L10,10",
     "more" to "M12,4 L12,5 M12,11 L12,12 M12,18 L12,19",
@@ -153,6 +154,7 @@ private val paths = mapOf(
         }
     }
     val tasks by vm.store.tasks.collectAsStateWithLifecycle()
+    val paused by vm.store.paused.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haze = remember { HazeState() }
     val dialogHaze = remember { HazeState() }
@@ -224,6 +226,14 @@ private val paths = mapOf(
                         Text(if(pager.currentPage == 0) androidx.compose.ui.res.stringResource(R.string.app_name) else "下载", style = MaterialTheme.typography.titleLarge,
                             modifier = Modifier.weight(1f))
                         if(pager.currentPage == 1) {
+                            if(tasks.any { it.status.pending }) {
+                                IconButton(onClick = {
+                                    if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
+                                }, enabled = !vm.deleting, modifier = Modifier.testTag("queueControl"),
+                                    colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.primary)) {
+                                    Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
+                                }
+                            }
                             IconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
                                 enabled = !vm.deleting && tasks.isNotEmpty(), modifier = Modifier.testTag("clearDownloads")) {
                                 Glyph("trash", "清空下载记录")
@@ -253,7 +263,7 @@ private val paths = mapOf(
         "发现${suggestion?.source?.platform?.label.orEmpty()}${if(suggestion?.images?.isNotEmpty() == true) "图集" else "视频"}",
         suggestion?.title.orEmpty(), "下载作品",
         buildList {
-            add(ClipboardPromptAction(if(suggestion?.images?.isNotEmpty() == true) "保存图片" else "下载") {
+            add(ClipboardPromptAction(suggestion?.saveActionLabel ?: "下载") {
                 if(vm.downloadSuggestion()) requestNotifications()
             })
             if(suggestion?.images?.isNotEmpty() == true && !suggestion.music.isNullOrBlank() && !suggestion.separateAlbumMusic) add(ClipboardPromptAction("合成视频") {
@@ -279,7 +289,7 @@ private val paths = mapOf(
                                 TextButton(onClick = { vm.clipboardSuggestion = null }) { Text("忽略") }
                                 if(info.images.isNotEmpty() && !info.music.isNullOrBlank() && !info.separateAlbumMusic) TextButton(onClick = { if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications() }) { Text("合成视频") }
                                 Button(onClick = { if(vm.downloadSuggestion()) requestNotifications() }, shape = RoundedCornerShape(14.dp)) {
-                                    Text(if(info.images.isEmpty()) "下载" else "保存图片")
+                                    Text(info.saveActionLabel)
                                 }
                             }
                         }
@@ -291,6 +301,14 @@ private val paths = mapOf(
 @Composable private fun LinkDialog(vm: MainViewModel, haze: HazeState, submit: () -> Unit) {
     val context = LocalContext.current
     val detected = remember(vm.input) { Links.detect(vm.input) }
+    var inputInfo by remember(detected?.key) { mutableStateOf<VideoInfo?>(null) }
+    LaunchedEffect(detected?.key) {
+        if(detected?.platform != Platform.DOUYIN) return@LaunchedEffect
+        delay(400)
+        try { inputInfo = VideoResolver().resolve(detected) }
+        catch(e: kotlinx.coroutines.CancellationException) { throw e }
+        catch(_: Exception) { /* Download can still resolve again; never offer an unverified video conversion. */ }
+    }
     val focus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var candidate by remember { mutableStateOf<String?>(null) }
@@ -353,8 +371,13 @@ private val paths = mapOf(
                                     vm.error = null; candidate = null
                                 }) { Text("粘贴") }
                             }
-                            if(detected?.platform == Platform.DOUYIN) {
-                                Text("如果是图集，保存为", style = MaterialTheme.typography.bodyMedium)
+                            val album = inputInfo
+                            val slides = album?.separateAlbumMusic == true || detected?.url?.contains("/slides/") == true
+                            if(slides) {
+                                Text(if(album != null && album.music.isNullOrBlank()) "逐张保存图片" else "图片和配乐分开保存",
+                                    style = MaterialTheme.typography.bodySmall)
+                            } else if(album != null && album.images.isNotEmpty() && !album.music.isNullOrBlank()) {
+                                Text("图集保存为", style = MaterialTheme.typography.bodyMedium)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     FilterChip(selected = vm.albumMode == AlbumMode.IMAGES, onClick = { vm.albumMode = AlbumMode.IMAGES }, label = { Text("图片") })
                                     FilterChip(selected = vm.albumMode == AlbumMode.VIDEO, onClick = { vm.albumMode = AlbumMode.VIDEO }, label = { Text("视频") })
@@ -365,7 +388,7 @@ private val paths = mapOf(
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                             TextButton(onClick = { vm.inputVisible = false }) { Text("取消") }
-                            Button(onClick = submit, enabled = vm.input.isNotBlank(), shape = RoundedCornerShape(14.dp)) { Text("下载") }
+                            Button(onClick = submit, enabled = vm.input.isNotBlank(), shape = RoundedCornerShape(14.dp)) { Text(inputInfo?.saveActionLabel ?: "下载") }
                         }
                     }
                 }
@@ -392,7 +415,6 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             vm.taskRevealed(revealTaskId)
         }
     }
-    val paused by vm.store.paused.collectAsStateWithLifecycle()
     val filtered = when(filter) {
         1 -> tasks.filter { it.status.pending }
         2 -> tasks.filter { it.status == TaskStatus.COMPLETED }
@@ -401,16 +423,6 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     LazyColumn(state = listState, modifier = Modifier.fillMaxSize().testTag("downloadList"),
         contentPadding = PaddingValues(top = topInset, bottom = 110.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if(tasks.any { it.status.pending }) item(key = "queueControls") {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 8.dp),
-                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
-                FilledTonalIconButton(onClick = {
-                    if(paused) { vm.resumeDownloads(); requestNotifications() } else vm.pauseDownloads()
-                }, enabled = !vm.deleting, modifier = Modifier.size(48.dp).testTag("queueControl")) {
-                    Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
-                }
-            }
-        }
         item(key = "filters") { Row(Modifier.padding(horizontal = 24.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("全部", "进行中", "已完成").forEachIndexed { index, title ->
                 FilterChip(selected = filter == index, onClick = { filter = index }, label = { Text(title) }, shape = CircleShape)
@@ -441,8 +453,6 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
 }
 @Composable private fun DownloadCard(task: DownloadTask, vm: MainViewModel, requestNotifications: () -> Unit) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var sharing by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     LaunchedEffect(task.uri, task.status) {
         if(task.status == TaskStatus.COMPLETED && task.uri.isNotBlank()) {
@@ -497,7 +507,9 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape))
             }
             if(task.error.isNotEmpty()) Text(task.error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if(task.status == TaskStatus.COMPLETED && task.mimeType.startsWith("image/")) {
+                SavedOutputButtons(task) { vm.notice = it }
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
                         style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -517,37 +529,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 if(task.status.pending) {
                     TextButton(onClick = { vm.cancel(task.id) }, enabled = !vm.deleting) { Text("取消") }
                 } else if(task.status == TaskStatus.COMPLETED) {
-                    FilledTonalIconButton(onClick = {
-                        runCatching { context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(task.uri), task.mimeType)
-                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
-                            .onFailure { vm.notice = "无法打开文件，文件可能已移除或没有可用应用" }
-                    }, modifier = Modifier.size(48.dp)) { Glyph("play", if(task.mimeType.startsWith("image/")) "打开图片" else "打开视频") }
-                    Spacer(Modifier.width(8.dp))
-                    FilledTonalIconButton(onClick = {
-                        sharing = true
-                        scope.launch {
-                            try {
-                                val uris = (task.outputUris.ifEmpty { listOf(task.uri) }).map(Uri::parse)
-                                val readable = withContext(Dispatchers.IO) {
-                                    uris.all { uri -> runCatching { context.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false }.getOrDefault(false) }
-                                }
-                                if(!readable) { vm.notice = "无法分享，部分文件可能已移除"; return@launch }
-                                val send = Intent(if(uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
-                                    val types = uris.mapNotNull { context.contentResolver.getType(it) }.distinct()
-                                    type = if(types.size > 1) "*/*" else types.firstOrNull() ?: task.mimeType
-                                    if(uris.size > 1) putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
-                                    else putExtra(Intent.EXTRA_STREAM, uris.first())
-                                    putExtra(Intent.EXTRA_TITLE, task.title)
-                                    clipData = ClipData.newUri(context.contentResolver, task.title, uris.first()).apply {
-                                        uris.drop(1).forEach { addItem(ClipData.Item(it)) }
-                                    }
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                }
-                                runCatching { context.startActivity(Intent.createChooser(send, if(task.mimeType.startsWith("image/")) "分享图片" else "分享视频")) }
-                                    .onFailure { vm.notice = "无法打开系统分享面板，请稍后重试" }
-                            } finally { sharing = false }
-                        }
-                    }, enabled = !sharing, modifier = Modifier.size(48.dp)) { Glyph("share", if(task.mimeType.startsWith("image/")) "分享图片" else "分享视频") }
+                    SavedOutputButtons(task) { vm.notice = it }
                 } else {
                     TextButton(onClick = { vm.retry(task.id); requestNotifications() }, enabled = !vm.deleting) { Text("重试") }
                 }
@@ -565,8 +547,8 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(if(choice) "将清空 $count 个下载任务，请选择是否保留已下载文件。"
-                    else if(files) "将删除 $count 个任务，以及这些任务保存的所有视频和图片。文件删除后无法恢复。"
-                    else "将删除 $count 个任务，已保存的视频和图片会保留在相册中。")
+                    else if(files) "将删除 $count 个任务，以及这些任务保存的所有视频、图片和音频。文件删除后无法恢复。"
+                    else "将删除 $count 个任务，已保存的视频、图片和音频会保留。")
                 Text("未完成的下载会停止，临时文件会清理。", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if(choice) {
@@ -663,7 +645,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("保存位置", style = MaterialTheme.typography.titleMedium)
                 Text("视频：Movies / 逗逼下载器\n图片：Pictures / 逗逼下载器", style = MaterialTheme.typography.bodyLarge)
-                Text("下载内容自动保存到系统相册。B 站和 YouTube 音视频自动合并；抖音图集可保存图片或合成为视频。",
+                Text("视频和图片保存到系统相册，独立配乐保存到音乐目录。B 站和 YouTube 音视频自动合并；普通抖音图集可合成为视频，slides 图片与配乐分开保存。",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

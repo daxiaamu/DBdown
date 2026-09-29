@@ -217,7 +217,7 @@ class DownloadService : Service() {
                     download(motion, video, info, task.id, downloaded, true)
                     downloaded += video.length()
                     validateVideo(video)
-                    state(task.id, TaskStatus.MERGING)
+                    state(task.id, TaskStatus.SAVING)
                     val jpeg = if(bounds.outMimeType == "image/jpeg") image else File(dir, "slide-$index.jpg").also { file ->
                         val bitmap = android.graphics.BitmapFactory.decodeFile(image.absolutePath) ?: error("Live 图封面无法解码")
                         try { file.outputStream().use { check(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, it)) } }

@@ -92,7 +92,7 @@ class DownloadStore(context: Context, preferencesName: String = "downloads") {
             (it.status == TaskStatus.COMPLETED || it.status in setOf(TaskStatus.DOWNLOADING, TaskStatus.MERGING, TaskStatus.SAVING)) }) {
             error("这个视频已在下载列表中")
         }
-        update(id) { it.copy(title = info.title, key = info.id, quality = if(info.images.isEmpty()) info.quality else "${info.images.size} 张图片 · ${if(mode == AlbumMode.IMAGES) "图片" else "合成视频"}", albumMode = mode, resolution = info.resolution, status = TaskStatus.DOWNLOADING) }
+        update(id) { it.copy(title = info.title, key = info.id, quality = if(info.images.isEmpty()) info.quality else "${info.images.size} 张图片 · ${if(info.separateAlbumMusic && !info.music.isNullOrBlank()) "图片和配乐" else if(mode == AlbumMode.IMAGES) "图片" else "合成视频"}", albumMode = mode, resolution = info.resolution, status = TaskStatus.DOWNLOADING) }
         return true
     }
     private fun persist() {
