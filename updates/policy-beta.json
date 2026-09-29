@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 7,
+  "policyRevision": 8,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.6: consistent media action icons"
+  "reason": "0.6.15-beta.7: detect extensionless original album audio"
 }

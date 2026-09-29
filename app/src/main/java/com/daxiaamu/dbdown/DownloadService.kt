@@ -196,6 +196,13 @@ class DownloadService : Service() {
                 state(task.id, TaskStatus.DOWNLOADING)
                 val audio = File(dir, "slides-music")
                 download(url, audio, info, task.id, downloaded, false)
+                val audioTracks = android.media.MediaExtractor()
+                try {
+                    audioTracks.setDataSource(audio.absolutePath)
+                    check(audioTracks.trackCount > 0 && (0 until audioTracks.trackCount).all {
+                        audioTracks.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)?.startsWith("audio/") == true
+                    }) { "配乐资源不是独立音频，请重新获取作品" }
+                } finally { audioTracks.release() }
                 val metadata = android.media.MediaMetadataRetriever()
                 val mime = try { metadata.setDataSource(audio.absolutePath); metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_MIMETYPE) }
                     finally { metadata.release() }

@@ -51,6 +51,21 @@ class AlbumParsingTest {
         image.remove("url_list"); image.remove("video")
         assertNull(DouyinPage.bestImageUrl(image))
     }
+    @Test fun extensionlessM4aNeedsResponseProbeAndVideoIsRejected() {
+        val item = JSONObject("""{"aweme_id":"7689856421856364794","images":[{"url_list":["https://images.example.com/1.png"]}],
+            "music":{"mid":"7487879155481839632"},"video":{"play_addr":{"uri":"https://cdn.example.com/obj/tos-cn-ve-2774/opaque"}}}""")
+        val info = DouyinPage.parse(page(item.toString()), link)
+        assertNull(info.music)
+        assertEquals(listOf("https://cdn.example.com/obj/tos-cn-ve-2774/opaque"), info.musicCandidates)
+        val audio = byteArrayOf(0, 0, 0, 28) + "ftypM4A ".toByteArray()
+        assertTrue(isAlbumAudio(audio, "audio/mp4"))
+        assertTrue(isAlbumAudio(audio, "video/mp4")) // Some original M4A CDNs return this incorrect MIME type.
+        assertTrue(isAlbumAudio(audio, "application/octet-stream"))
+        val video = byteArrayOf(0, 0, 0, 28) + "ftypisom".toByteArray()
+        assertFalse(isAlbumAudio(video, "video/mp4"))
+        assertFalse(isAlbumAudio(video, "audio/mp4"))
+        assertFalse(isAlbumAudio("<html>".toByteArray(), "text/html"))
+    }
     @Test fun neverUsesRecommendedDifferentWork() {
         assertTrue(runCatching { DouyinPage.parse(page("""{"aweme_id":"9999999999999999999","images":[{"url_list":["https://images.example.com/x"]}]}"""), link) }.isFailure)
     }

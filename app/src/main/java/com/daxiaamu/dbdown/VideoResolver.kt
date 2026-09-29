@@ -11,7 +11,7 @@ data class VideoInfo(
     val source: VideoLink, val id: String, val title: String,
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
-    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false
+    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false, val musicCandidates: List<String> = emptyList()
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
@@ -107,7 +107,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         val id = link.key.removePrefix("dy:")
         if(link.url.contains("/slides/")) {
             val raw = get("https://www.iesdouyin.com/web/api/v2/aweme/slidesinfo/?aweme_ids=%5B$id%5D&request_source=200", MOBILE, "https://www.iesdouyin.com/share/slides/$id/")
-            return DouyinPage.parseSlides(raw, link)
+            return resolveAlbumMusic(DouyinPage.parseSlides(raw, link))
         }
         val kind = if(link.url.contains("/note/")) "note" else "video"
         var page = try {
@@ -118,7 +118,32 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         if(!page.contains("videoInfoRes")) {
             page = get("https://www.douyin.com/share/$kind/$id/", MOBILE, "https://www.douyin.com/")
         }
-        return DouyinPage.parse(page, link)
+        return resolveAlbumMusic(DouyinPage.parse(page, link))
+    }
+    private fun resolveAlbumMusic(info: VideoInfo): VideoInfo {
+        if(info.images.isEmpty() || info.music != null) return info
+        for(url in info.musicCandidates) {
+            val audio = try {
+                client.newCall(Request.Builder().url(url).header("User-Agent", info.userAgent)
+                    .header("Referer", info.referer).header("Range", "bytes=0-4095").build())
+                    .also(trackCall).execute().use { response ->
+                        if(!response.isSuccessful) false else response.body?.let { body ->
+                            val header = ByteArray(32)
+                            var count = 0
+                            body.byteStream().use { input ->
+                                while(count < header.size) {
+                                    val read = input.read(header, count, header.size - count)
+                                    if(read < 0) break
+                                    count += read
+                                }
+                            }
+                            isAlbumAudio(header.copyOf(count), response.header("Content-Type").orEmpty())
+                        } ?: false
+                    }
+            } catch(_: java.io.IOException) { false }
+            if(audio) return info.copy(music = url)
+        }
+        return info
     }
     private fun https(url: String) = if(url.startsWith("http://")) "https://" + url.removePrefix("http://") else url
 }

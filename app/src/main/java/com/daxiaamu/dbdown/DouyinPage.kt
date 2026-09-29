@@ -39,6 +39,8 @@ internal object DouyinPage {
                 ?: validUrl(musicAddress?.optString("uri").orEmpty())
                 ?: (listOfNotNull(validUrl(play?.optString("uri").orEmpty())) + urls(play?.optJSONArray("url_list")))
                     .firstOrNull(::isAudioAddress)
+            val audioCandidates = (listOfNotNull(validUrl(play?.optString("uri").orEmpty())) + urls(play?.optJSONArray("url_list")))
+                .map { url -> validUrl(url.toHttpUrlOrNull()?.queryParameter("video_id").orEmpty()) ?: url }.distinct()
             val imageVideos = (0 until images.length()).map { index ->
                 val image = images.getJSONObject(index)
                 val video = image.optJSONObject("video")
@@ -50,7 +52,7 @@ internal object DouyinPage {
             val kind = if(link.url.contains("/slides/")) "slides" else "note"
             val canonical = link.copy(url = "https://www.douyin.com/$kind/$id")
             return VideoInfo(canonical, "dy:$id", title, "", quality = "${urls.size} 张图片",
-                referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, images = urls, music = music, imageVideos = imageVideos, separateAlbumMusic = kind == "slides" || imageVideos.any { it != null })
+                referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, images = urls, music = music, imageVideos = imageVideos, separateAlbumMusic = kind == "slides" || imageVideos.any { it != null }, musicCandidates = audioCandidates)
         }
         val urls = play?.optJSONArray("url_list") ?: error("没有可用的视频地址")
         val originals = (0 until urls.length()).mapNotNull { validUrl(urls.optString(it)) }
