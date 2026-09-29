@@ -135,3 +135,7 @@ APK：app/build/outputs/apk/debug/app-debug.apk
 ## 许可
 
 本项目采用 [GPL-3.0-or-later](LICENSE)，依赖说明见 [开源致谢](THIRD_PARTY_NOTICES.md)。YouTube 解析基于 [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor)。
+
+### 首页轮播消息
+
+通过 [JSON 配置](config/home-messages.json) 控制首页轮播的总开关、切换时长、消息文字和可选链接。配置说明见 [首页轮播消息](docs/HOME_MESSAGES.md)。

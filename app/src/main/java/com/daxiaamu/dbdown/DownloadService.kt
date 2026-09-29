@@ -110,7 +110,10 @@ class DownloadService : Service() {
                     val audio = File(dir, "audio.m4a")
                     download(info.audio, audio, info, task.id, video.length(), false)
                     state(task.id, TaskStatus.MERGING)
-                    File(dir, "merged.mp4").also { mux(video, audio, it) }
+                    File(dir, "merged.mp4").also {
+                        if(info.audioCodec.equals("flac", true)) LosslessMuxer.merge(video, audio, it)
+                        else mux(video, audio, it)
+                    }
                 } else video
                 validateVideo(output)
                 state(task.id, TaskStatus.SAVING)
@@ -144,19 +147,21 @@ class DownloadService : Service() {
         }
     }
     private suspend fun downloadAlbum(task: DownloadTask, info: VideoInfo, dir: File) {
+        if(info.separateAlbumMusic) { downloadSlides(task, info, dir); return }
+        val mode = effectiveAlbumMode(task.albumMode, info.images.isNotEmpty(), info.music)
         var downloaded = 0L
         val files = info.images.mapIndexed { index, url ->
             currentCoroutineContext().ensureActive()
             val file = File(dir, "image-$index")
-            download(url, file, info, task.id, downloaded, index != info.images.lastIndex || task.albumMode == AlbumMode.VIDEO)
+            download(url, file, info, task.id, downloaded, index != info.images.lastIndex || mode == AlbumMode.VIDEO)
             val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
             android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
             check(bounds.outWidth > 0 && bounds.outHeight > 0) { "第 ${index + 1} 张图片下载不完整" }
             downloaded += file.length()
             file
         }
-        if(task.albumMode == AlbumMode.VIDEO) {
-            val music = info.music?.let { url -> File(dir, "music.mp3").also { download(url, it, info, task.id, downloaded, false) } }
+        if(mode == AlbumMode.VIDEO) {
+            val music = File(dir, "music.mp3").also { download(requireNotNull(info.music), it, info, task.id, downloaded, false) }
             state(task.id, TaskStatus.MERGING)
             val output = File(dir, "album.mp4")
             AlbumExporter.export(this, files, music, output)
@@ -188,6 +193,69 @@ class DownloadService : Service() {
             throw e
         }
         notifyResult(task.id, info.title, "${files.size} 张图片已保存到 Pictures/逗逼下载器", published.first())
+    }
+    private suspend fun downloadSlides(task: DownloadTask, info: VideoInfo, dir: File) {
+        val published = mutableListOf<Uri>()
+        var downloaded = 0L
+        var saved = 0L
+        try {
+            for((index, url) in info.images.withIndex()) {
+                currentCoroutineContext().ensureActive()
+                state(task.id, TaskStatus.DOWNLOADING)
+                val image = File(dir, "slide-$index-image")
+                download(url, image, info, task.id, downloaded, true)
+                downloaded += image.length()
+                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                android.graphics.BitmapFactory.decodeFile(image.absolutePath, bounds)
+                check(bounds.outWidth > 0 && bounds.outHeight > 0) { "第 ${index + 1} 张图片无效" }
+                val motion = info.imageVideos.getOrNull(index)
+                val output: File
+                val mime: String
+                val extension: String
+                if(motion != null) {
+                    val video = File(dir, "slide-$index.mp4")
+                    download(motion, video, info, task.id, downloaded, true)
+                    downloaded += video.length()
+                    validateVideo(video)
+                    state(task.id, TaskStatus.MERGING)
+                    val jpeg = if(bounds.outMimeType == "image/jpeg") image else File(dir, "slide-$index.jpg").also { file ->
+                        val bitmap = android.graphics.BitmapFactory.decodeFile(image.absolutePath) ?: error("Live 图封面无法解码")
+                        try { file.outputStream().use { check(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, it)) } }
+                        finally { bitmap.recycle() }
+                    }
+                    output = File(dir, "slide-$index-MP.jpg")
+                    MotionPhoto.write(jpeg, video, output)
+                    mime = "image/jpeg"; extension = "jpg"
+                } else {
+                    output = image
+                    mime = bounds.outMimeType ?: error("图片格式无法识别")
+                    extension = when(mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; else -> error("暂不支持此静态图片格式") }
+                }
+                state(task.id, TaskStatus.SAVING)
+                published += publish(output, info.title, "${task.id.take(8)}-${index + 1}", mime, extension, image = true, motion = motion != null)
+                saved += output.length()
+            }
+            info.music?.let { url ->
+                state(task.id, TaskStatus.DOWNLOADING)
+                val audio = File(dir, "slides-music")
+                download(url, audio, info, task.id, downloaded, false)
+                val metadata = android.media.MediaMetadataRetriever()
+                val mime = try { metadata.setDataSource(audio.absolutePath); metadata.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_MIMETYPE) }
+                    finally { metadata.release() }
+                val extension = when(mime) { "audio/mpeg", "audio/mp3" -> "mp3"; "audio/mp4", "video/mp4" -> "m4a"; "audio/flac" -> "flac"; "audio/aac" -> "aac"; else -> error("配乐格式无法识别") }
+                state(task.id, TaskStatus.SAVING)
+                published += publish(audio, info.title, task.id, if(extension == "m4a") "audio/mp4" else mime!!, extension, audio = true)
+                saved += audio.length()
+            }
+            currentCoroutineContext().ensureActive()
+            store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = published.first().toString(),
+                outputUris = published.map(Uri::toString), mimeType = contentResolver.getType(published.first()) ?: "image/jpeg",
+                albumMode = AlbumMode.IMAGES, bytes = saved, total = saved, speed = 0, error = "") }
+        } catch(e: Exception) {
+            published.forEach { runCatching { contentResolver.delete(it, null, null) } }
+            throw e
+        }
+        notifyResult(task.id, info.title, "${info.images.size} 张内容已保存${if(info.music != null) "，配乐单独保存" else ""}", published.first())
     }
     private suspend fun state(id: String, status: TaskStatus) {
         currentCoroutineContext().ensureActive()
@@ -280,15 +348,15 @@ class DownloadService : Service() {
             }) { "服务器返回的文件不是可播放视频" }
         } finally { extractor.release() }
     }
-    private suspend fun publish(file: File, title: String, id: String, mime: String = "video/mp4", extension: String = "mp4", image: Boolean = false): Uri {
+    private suspend fun publish(file: File, title: String, id: String, mime: String = "video/mp4", extension: String = "mp4", image: Boolean = false, audio: Boolean = false, motion: Boolean = false): Uri {
         val clean = mediaBaseName(title)
         val values = ContentValues().apply {
-            put(MediaStore.Video.Media.DISPLAY_NAME, "$clean-${id.take(12)}.$extension")
+            put(MediaStore.Video.Media.DISPLAY_NAME, "$clean-${id.take(12)}${if(motion) "_MP" else ""}.$extension")
             put(MediaStore.Video.Media.MIME_TYPE, mime)
-            put(MediaStore.Video.Media.RELATIVE_PATH, "${if(image) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES}/逗逼下载器")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "${if(image) Environment.DIRECTORY_PICTURES else if(audio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES}/逗逼下载器")
             put(MediaStore.Video.Media.IS_PENDING, 1)
         }
-        val uri = contentResolver.insert(if(image) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: error("无法创建视频文件")
+        val uri = contentResolver.insert(if(image) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else if(audio) MediaStore.Audio.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: error("无法创建视频文件")
         try {
             contentResolver.openOutputStream(uri)?.use { output ->
                 file.inputStream().use { input ->

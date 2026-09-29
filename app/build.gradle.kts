@@ -7,11 +7,12 @@ android {
     compileSdk = 37
     defaultConfig {
         applicationId = "com.daxiaamu.dbdown"
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
         minSdk = 33
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 23
-        versionName = "0.6.14"
+        versionCode = 24
+        versionName = "0.6.15-beta.1"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"daxiaamu/DBdown\"")
         buildConfigField("String", "UPDATE_BRANCH", "\"main\"")
     }
@@ -38,6 +39,8 @@ android {
     }
 }
 dependencies {
+    implementation("dev.ffmpegkit-maintained:ffmpeg-kit-min:8.1.7")
+    implementation("com.arthenica:smart-exception-java:0.2.1")
     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.5") {
         // Extractor calls Rhino Context directly; Android has no JSR-223 scripting engine API.
         exclude(group = "org.mozilla", module = "rhino-engine")

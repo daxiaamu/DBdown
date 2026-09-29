@@ -64,14 +64,11 @@ internal object YoutubeResolver {
             val extractor = ServiceList.YouTube.getStreamExtractor(link.url)
             extractor.fetchPage()
             check(extractor.streamType == StreamType.VIDEO_STREAM) { "暂不支持 YouTube 直播，请在直播结束后下载普通视频" }
-            val audio = extractor.audioStreams.filter {
-                it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.format == MediaFormat.M4A
-            }.maxWithOrNull(compareBy<AudioStream> { it.audioTrackType == AudioTrackType.ORIGINAL }
-                .thenBy { it.averageBitrate }.thenBy { it.bitrate })
+            val audio = bestYoutubeAudio(extractor.audioStreams)
             val video = bestYoutubeVideo(extractor.videoStreams + extractor.videoOnlyStreams, audio != null)
                 ?: error("这个 YouTube 视频没有可下载的 MP4 资源")
             return VideoInfo(link, link.key, extractor.name, video.content,
-                audio = if(video.isVideoOnly()) audio!!.content else null, quality = video.getResolution(),
+                audio = audio?.content, quality = video.getResolution(),
                 referer = link.url, userAgent = VideoResolver.DESKTOP,
                 resolution = resolutionLabel(video.width, video.height))
         } catch(e: org.schabi.newpipe.extractor.exceptions.ExtractionException) {
@@ -96,3 +93,10 @@ internal fun bestYoutubeVideo(streams: List<VideoStream>, hasAudio: Boolean): Vi
         it.codec.orEmpty().startsWith("hvc")) }
     .maxWithOrNull(compareBy<VideoStream> { it.width.toLong() * it.height }
         .thenBy { Regex("^[0-9]+").find(it.getResolution())?.value?.toIntOrNull() ?: 0 }.thenBy { it.fps }.thenBy { it.bitrate })
+
+/** Keep the original language before comparing bitrate; never pick a dub just for more bits. */
+internal fun bestYoutubeAudio(streams: List<AudioStream>): AudioStream? = streams.filter {
+    it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.format == MediaFormat.M4A
+}.maxWithOrNull(compareBy<AudioStream> { it.audioTrackType == AudioTrackType.ORIGINAL }
+    .thenBy { if(it.averageBitrate > 0) it.averageBitrate.toLong() * 1000 else it.bitrate.toLong() }
+    .thenBy { it.bitrate })

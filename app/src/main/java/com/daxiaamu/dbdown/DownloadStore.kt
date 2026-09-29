@@ -87,7 +87,7 @@ class DownloadStore(context: Context, preferencesName: String = "downloads") {
     @Synchronized fun claim(id: String, info: VideoInfo): Boolean {
         val task = get(id) ?: return false
         if(!task.status.active) return false
-        val mode = if(info.images.isEmpty()) AlbumMode.IMAGES else task.albumMode
+        val mode = if(info.separateAlbumMusic) AlbumMode.IMAGES else effectiveAlbumMode(task.albumMode, info.images.isNotEmpty(), info.music)
         if(_tasks.value.any { it.id != id && it.key == info.id && it.albumMode == mode &&
             (it.status == TaskStatus.COMPLETED || it.status in setOf(TaskStatus.DOWNLOADING, TaskStatus.MERGING, TaskStatus.SAVING)) }) {
             error("这个视频已在下载列表中")

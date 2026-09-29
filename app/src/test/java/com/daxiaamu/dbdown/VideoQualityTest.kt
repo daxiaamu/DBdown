@@ -20,6 +20,14 @@ class VideoQualityTest {
         assertEquals("https://cdn.example/4k.mp4",info.video)
         assertEquals("https://cdn.example/1080.mp4",info.videoFallbacks.first())
     }
+    @Test fun douyinKeepsOriginalMuxedAudioWithHighestBitrateVideo() {
+        val info = DouyinPage.parse(page("""{"play_addr":{"url_list":["https://cdn.example/default.mp4"]},"bit_rate":[
+            {"bit_rate":4000,"play_addr":{"width":1920,"height":1080,"url_list":["https://cdn.example/low.mp4"]}},
+            {"bit_rate":8000,"play_addr":{"width":1920,"height":1080,"url_list":["https://cdn.example/high.mp4"]}}]}"""), link)
+        assertEquals("https://cdn.example/high.mp4", info.video)
+        assertNull(info.audio)
+        assertNull(info.music)
+    }
     @Test fun biliCanSelectHigherHevcInsteadOfLowerAvc() {
         val stream = bestBiliVideo(JSONArray("""[{"width":1920,"height":1080,"codecs":"avc1","id":80},{"width":3840,"height":2160,"codecs":"hev1","id":120},{"width":7680,"height":4320,"codecs":"unsupported"}]"""))!!
         assertEquals(3840,stream.getInt("width"))

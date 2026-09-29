@@ -24,6 +24,20 @@ class YoutubeAccountTest {
         listOf("https://accounts.google.com/", "https://youtube.googleapis.com/", "https://r1.googlevideo.com/",
             "https://youtube.com.evil.com/").forEach { assertFalse(usesWebCookies(it.toHttpUrl())) }
     }
+    @Test fun combinedVideoStillUsesHighestDefaultAudioTrack() {
+        val video = JSONObject().put("mimeType", "video/mp4; codecs=\"avc1.640028\"")
+            .put("width", 1920).put("height", 1080).put("url", "https://r1.googlevideo.com/combined")
+        fun audio(rate: Int, default: Boolean) = JSONObject().put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"")
+            .put("bitrate", rate).put("url", "https://r1.googlevideo.com/audio$rate")
+            .put("audioTrack", JSONObject().put("audioIsDefault", default))
+        val player = JSONObject().put("playabilityStatus", JSONObject().put("status", "OK"))
+            .put("videoDetails", JSONObject().put("videoId", "BLKegH19KGI").put("title", "Test"))
+            .put("streamingData", JSONObject().put("formats", JSONArray().put(video))
+                .put("adaptiveFormats", JSONArray().put(audio(128000, true)).put(audio(256000, true)).put(audio(384000, false))))
+        val info = youtubeWebVideo("var ytInitialPlayerResponse = $player;", Links.detect("BLKegH19KGI")!!) { _, url -> url }!!
+        assertEquals("https://r1.googlevideo.com/audio256000", info.audio)
+        assertEquals("https://r1.googlevideo.com/combined", info.video)
+    }
     @Test fun authenticatedPlayerUsesMatchingVideoAndCompatibleAudio() {
         val video=JSONObject().put("itag",137).put("mimeType","video/mp4; codecs=\"avc1.640028\"")
             .put("width",1920).put("height",1080).put("url","https://r1.googlevideo.com/video").put("qualityLabel","1080p")

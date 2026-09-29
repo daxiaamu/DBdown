@@ -6,6 +6,14 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 /** Reads only the current work, never recommendations or cover images. */
 internal object DouyinPage {
+    fun parseSlides(raw: String, link: VideoLink): VideoInfo {
+        val json = JSONObject(raw)
+        check(json.optInt("status_code", -1) == 0) { "抖音未返回 Live 图资源，请稍后重试" }
+        val items = json.optJSONArray("aweme_details") ?: error("没有可用的 Live 图内容")
+        val router = JSONObject().put("loaderData", JSONObject().put("note_(id)/page",
+            JSONObject().put("videoInfoRes", JSONObject().put("item_list", items))))
+        return parse("<script>window._ROUTER_DATA=$router</script>", link).copy(separateAlbumMusic = true)
+    }
     fun parse(page: String, link: VideoLink): VideoInfo {
         val raw = Regex("""window\._ROUTER_DATA\s*=\s*(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
             .find(page)?.groupValues?.get(1)?.trim()?.trimEnd(';')
@@ -24,14 +32,24 @@ internal object DouyinPage {
         if(images != null && images.length() > 0) {
             val urls = (0 until images.length()).map { index ->
                 val image = images.getJSONObject(index)
-                firstUrl(image.optJSONArray("url_list")) ?: error("第 ${index + 1} 张图片没有可用地址")
+                firstUrl(image.optJSONArray("download_url_list")) ?: firstUrl(image.optJSONArray("url_list")) ?: error("第 ${index + 1} 张图片没有可用地址")
             }
             val music = firstUrl(item.optJSONObject("music")?.optJSONObject("play_url")?.optJSONArray("url_list"))
-                ?: validUrl(play?.optString("uri").orEmpty())
-                ?: firstUrl(play?.optJSONArray("url_list"))?.replace("/playwm/", "/play/")
-            val canonical = link.copy(url = "https://www.douyin.com/note/$id")
+                ?: if(link.url.contains("/slides/")) null else (
+                    validUrl(play?.optString("uri").orEmpty())
+                        ?: firstUrl(play?.optJSONArray("url_list"))?.replace("/playwm/", "/play/"))
+            val imageVideos = (0 until images.length()).map { index ->
+                val image = images.getJSONObject(index)
+                val video = image.optJSONObject("video")
+                val url = firstUrl(video?.optJSONObject("play_addr")?.optJSONArray("url_list"))
+                    ?: firstUrl(video?.optJSONObject("play_addr_h264")?.optJSONArray("url_list"))
+                check(image.optInt("clip_type") != 3 || url != null) { "第 ${index + 1} 张 Live 图缺少动态资源" }
+                url
+            }
+            val kind = if(link.url.contains("/slides/")) "slides" else "note"
+            val canonical = link.copy(url = "https://www.douyin.com/$kind/$id")
             return VideoInfo(canonical, "dy:$id", title, "", quality = "${urls.size} 张图片",
-                referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, images = urls, music = music)
+                referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, images = urls, music = music, imageVideos = imageVideos, separateAlbumMusic = kind == "slides" || imageVideos.any { it != null })
         }
         val urls = play?.optJSONArray("url_list") ?: error("没有可用的视频地址")
         val originals = (0 until urls.length()).mapNotNull { validUrl(urls.optString(it)) }

@@ -61,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -145,6 +146,12 @@ private val paths = mapOf(
 
 @Composable fun DownloaderScreen(vm: MainViewModel, requestNotifications: () -> Unit, checkClipboard: () -> Unit) {
     AccountExpiryPrompt { vm.inputVisible = false; vm.settings = true }
+    val messagesLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(vm, messagesLifecycle) {
+        messagesLifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while(true) { vm.refreshHomeMessages(); delay(300_000) }
+        }
+    }
     val tasks by vm.store.tasks.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haze = remember { HazeState() }
@@ -183,6 +190,8 @@ private val paths = mapOf(
                 ) { page ->
                     if(page == 0) {
                     Box(Modifier.fillMaxSize().testTag("homePage").padding(top = topInset).padding(horizontal = 28.dp).padding(bottom = 120.dp), contentAlignment = Alignment.Center) {
+                        Column(Modifier.widthIn(max = 540.dp).fillMaxWidth()) {
+                        HomeMessageCarousel(vm.homeMessages, pager.currentPage == 0 && !vm.inputVisible)
                         Surface(onClick = { vm.openInput() }, modifier = Modifier.widthIn(max = 540.dp).fillMaxWidth().height(66.dp),
                             shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface,
                             shadowElevation = 2.dp) {
@@ -192,6 +201,7 @@ private val paths = mapOf(
                                 Text("粘贴视频链接", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                                 Glyph("arrow", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                        }
                         }
                     }
                 } else DownloadsPage(tasks, vm, requestNotifications, topInset)
@@ -246,7 +256,7 @@ private val paths = mapOf(
             add(ClipboardPromptAction(if(suggestion?.images?.isNotEmpty() == true) "保存图片" else "下载") {
                 if(vm.downloadSuggestion()) requestNotifications()
             })
-            if(suggestion?.images?.isNotEmpty() == true) add(ClipboardPromptAction("合成视频") {
+            if(suggestion?.images?.isNotEmpty() == true && !suggestion.music.isNullOrBlank() && !suggestion.separateAlbumMusic) add(ClipboardPromptAction("合成视频") {
                 if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications()
             })
         }, open = { suggestion?.let { openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
@@ -267,7 +277,7 @@ private val paths = mapOf(
                                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 TextButton(onClick = { vm.clipboardSuggestion = null }) { Text("忽略") }
-                                if(info.images.isNotEmpty()) TextButton(onClick = { if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications() }) { Text("合成视频") }
+                                if(info.images.isNotEmpty() && !info.music.isNullOrBlank() && !info.separateAlbumMusic) TextButton(onClick = { if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications() }) { Text("合成视频") }
                                 Button(onClick = { if(vm.downloadSuggestion()) requestNotifications() }, shape = RoundedCornerShape(14.dp)) {
                                     Text(if(info.images.isEmpty()) "下载" else "保存图片")
                                 }
@@ -349,7 +359,7 @@ private val paths = mapOf(
                                     FilterChip(selected = vm.albumMode == AlbumMode.IMAGES, onClick = { vm.albumMode = AlbumMode.IMAGES }, label = { Text("图片") })
                                     FilterChip(selected = vm.albumMode == AlbumMode.VIDEO, onClick = { vm.albumMode = AlbumMode.VIDEO }, label = { Text("视频") })
                                 }
-                                if(vm.albumMode == AlbumMode.VIDEO) Text("每张图片播放 3 秒，保留可获取的配乐", style = MaterialTheme.typography.bodySmall)
+                                if(vm.albumMode == AlbumMode.VIDEO) Text("按完整配乐时长平均展示每张图片；无配乐时仅保存图片", style = MaterialTheme.typography.bodySmall)
                             }
                             vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                         }
@@ -523,7 +533,8 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                                 }
                                 if(!readable) { vm.notice = "无法分享，部分文件可能已移除"; return@launch }
                                 val send = Intent(if(uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
-                                    type = task.mimeType
+                                    val types = uris.mapNotNull { context.contentResolver.getType(it) }.distinct()
+                                    type = if(types.size > 1) "*/*" else types.firstOrNull() ?: task.mimeType
                                     if(uris.size > 1) putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
                                     else putExtra(Intent.EXTRA_STREAM, uris.first())
                                     putExtra(Intent.EXTRA_TITLE, task.title)

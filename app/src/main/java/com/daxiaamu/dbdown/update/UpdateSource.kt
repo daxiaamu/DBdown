@@ -82,6 +82,20 @@ class UpdateSource internal constructor(private val repository: String, private 
             accepted
         } finally { jobs.forEach { it.cancel() } }
     }
+    /** Repository content shares the updater's endpoints, bounded reads and HTTPS handling. */
+    internal suspend fun <T : Any> repositoryJson(path: String, parse: (String) -> T): T = supervisorScope {
+        require(Regex("[A-Za-z0-9_./-]+").matches(path) && ".." !in path)
+        val jobs = sources(path).map { source -> async {
+            try { parse(read(source.url)) }
+            catch(e: CancellationException) { throw e }
+            catch(_: Exception) { null }
+        } }
+        try {
+            // Prefer repository authority, then fall back in the same CDN order as updates.
+            jobs.firstNotNullOfOrNull { it.await() } ?: error("无法读取仓库配置")
+        } finally { jobs.forEach { it.cancel() } }
+    }
+
     private suspend fun read(url: String): String {
         val separator = if('?' in url) "&" else "?"
         return withContext(Dispatchers.IO) {

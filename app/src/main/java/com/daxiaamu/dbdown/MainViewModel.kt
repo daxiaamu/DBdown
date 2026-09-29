@@ -10,6 +10,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
+    internal var homeMessages by mutableStateOf(HomeMessages.Empty)
+        private set
+    internal suspend fun refreshHomeMessages() {
+        try {
+            homeMessages = com.daxiaamu.dbdown.update.UpdateSource(BuildConfig.UPDATE_REPOSITORY, BuildConfig.UPDATE_BRANCH)
+                .repositoryJson("config/home-messages.json", HomeMessages::parse)
+        } catch(e: CancellationException) { throw e }
+        catch(_: Exception) { /* Keep the current messages; first-load failures stay invisible. */ }
+    }
     private val context get() = getApplication<DownloaderApp>()
     val store get() = context.store
     private val prefs = app.getSharedPreferences("settings", 0)
@@ -126,7 +135,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun downloadSuggestion(mode: AlbumMode = AlbumMode.IMAGES): Boolean {
         val info = clipboardSuggestion ?: return false
-        val task = store.add(info.source, mode)
+        val task = store.add(info.source, if(info.separateAlbumMusic) AlbumMode.IMAGES else effectiveAlbumMode(mode, info.images.isNotEmpty(), info.music))
         clipboardSuggestion = null
         if(task == null) { notice = "这个作品已经在下载列表中"; return false }
         revealTaskId = task.id

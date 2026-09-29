@@ -11,7 +11,7 @@ data class VideoInfo(
     val source: VideoLink, val id: String, val title: String,
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
-    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = ""
+    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
@@ -78,13 +78,10 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         if (dash != null) {
             val videoArray = dash.getJSONArray("video")
             val video = bestBiliVideo(videoArray) ?: error("这个视频没有可合并的 AVC / HEVC 视频流")
-            val audioArray = dash.optJSONArray("audio") ?: error("视频没有可用音轨")
-            val audio = (0 until audioArray.length()).map { audioArray.getJSONObject(it) }
-                .filter { it.optString("codecs").startsWith("mp4a") }.maxByOrNull { it.optLong("bandwidth") }
-                ?: error("视频没有可合并的 AAC 音轨")
+            val audio = bestBiliAudio(dash) ?: error("视频没有可合并的 FLAC / AAC 音轨")
             return VideoInfo(canonical, canonical.key, title, streamUrl(video), streamUrl(audio),
                 "${video.optInt("height")}P", canonical.url, DESKTOP,
-                resolution = resolutionLabel(video.optInt("width"), video.optInt("height")))
+                resolution = resolutionLabel(video.optInt("width"), video.optInt("height")), audioCodec = audio.optString("codecs"))
         }
         val segments = play.optJSONArray("durl") ?: error("此视频暂无可下载资源，可能需要登录或会员权限")
         check(segments.length() == 1) { "暂不支持此视频的多段 FLV 格式" }
@@ -108,6 +105,10 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
     private fun streamUrl(value: JSONObject) = https(value.optString("baseUrl").ifEmpty { value.getString("base_url") })
     private fun douyin(link: VideoLink): VideoInfo {
         val id = link.key.removePrefix("dy:")
+        if(link.url.contains("/slides/")) {
+            val raw = get("https://www.iesdouyin.com/web/api/v2/aweme/slidesinfo/?aweme_ids=%5B$id%5D&request_source=200", MOBILE, "https://www.iesdouyin.com/share/slides/$id/")
+            return DouyinPage.parseSlides(raw, link)
+        }
         val kind = if(link.url.contains("/note/")) "note" else "video"
         var page = try {
             get("https://www.douyin.com/share/$kind/$id/", MOBILE, "https://www.douyin.com/")

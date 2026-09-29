@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "enabled": true,
+  "intervalSeconds": 5,
+  "messages": [
+    { "id": "share", "text": "复制视频链接或分享文案，轻松添加下载。" },
+    { "id": "opensource", "text": "DBDown 开放源代码，查看项目与最新动态。", "url": "https://github.com/daxiaamu/DBdown" }
+  ]
+}

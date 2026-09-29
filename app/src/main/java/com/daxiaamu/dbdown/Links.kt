@@ -69,7 +69,7 @@ object Links {
             return VideoLink(Platform.DOUYIN, "https://www.douyin.com/video/$id", "dy:$id")
         }
         if (host in setOf("douyin.com", "www.douyin.com", "m.douyin.com", "www.iesdouyin.com", "iesdouyin.com")) {
-            val match = Regex("""^/(?:share/)?(video|note)/([0-9]{8,22})/?$""").matchEntire(path) ?: return null
+            val match = Regex("""^/(?:share/)?(video|note|slides)/([0-9]{8,22})/?$""").matchEntire(path) ?: return null
             val kind = match.groupValues[1]; val id = match.groupValues[2]
             return VideoLink(Platform.DOUYIN, "https://www.douyin.com/$kind/$id", "dy:$id")
         }

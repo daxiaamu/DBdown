@@ -40,6 +40,7 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
     val adaptive = formats("adaptiveFormats")
     val audio = adaptive.filter { it.optString("mimeType").startsWith("audio/mp4") && it.optString("mimeType").contains("mp4a") }
         .maxWithOrNull(compareBy<JSONObject> { it.optJSONObject("audioTrack")?.optBoolean("audioIsDefault") == true }
+            .thenBy { it.optLong("averageBitrate").takeIf { rate -> rate > 0 } ?: it.optLong("bitrate") }
             .thenBy { it.optLong("bitrate") })
     val combined = formats("formats")
     val video = (combined + if(audio != null) adaptive else emptyList()).filter {
@@ -58,7 +59,7 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
         }
     }
     return VideoInfo(link, link.key, details.optString("title", "YouTube $id"), stream(video),
-        audio = if(video in combined) null else audio?.let(::stream), quality = video.optString("qualityLabel"),
+        audio = audio?.let(::stream), quality = video.optString("qualityLabel"),
         referer = link.url, userAgent = VideoResolver.DESKTOP,
         resolution = resolutionLabel(video.optInt("width"), video.optInt("height")))
 }

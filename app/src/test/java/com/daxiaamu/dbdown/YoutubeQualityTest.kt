@@ -14,6 +14,20 @@ class YoutubeQualityTest {
             .setMediaFormat(MediaFormat.MPEG_4).setIsVideoOnly(only).setResolution("${minOf(width,height)}p")
             .setDeliveryMethod(delivery).setItagItem(itag).build()
     }
+    private fun audio(rate: Int, type: AudioTrackType = AudioTrackType.ORIGINAL,
+        format: MediaFormat = MediaFormat.M4A, delivery: DeliveryMethod = DeliveryMethod.PROGRESSIVE_HTTP) =
+        AudioStream.Builder().setId("$rate-$type").setContent("https://example.com/audio", true)
+            .setMediaFormat(format).setAverageBitrate(rate).setAudioTrackType(type).setDeliveryMethod(delivery).build()
+    @Test fun picksHighestOriginalAudioRatherThanHigherBitrateDub() {
+        val high = audio(256)
+        assertSame(high, bestYoutubeAudio(listOf(audio(128), high, audio(384, AudioTrackType.DUBBED))))
+    }
+    @Test fun ignoresUnsupportedAudioContainersAndSegmentedStreams() {
+        val supported = audio(128)
+        assertSame(supported, bestYoutubeAudio(listOf(supported, audio(256, delivery = DeliveryMethod.HLS),
+            audio(320, format = MediaFormat.WEBMA))))
+        assertNull(bestYoutubeAudio(emptyList()))
+    }
     @Test fun choosesHighestCompatibleResolution() {
         val high = video(3840,2160,"hvc1")
         assertSame(high,bestYoutubeVideo(listOf(video(1920,1080),high,video(7680,4320,"av01")),true))
