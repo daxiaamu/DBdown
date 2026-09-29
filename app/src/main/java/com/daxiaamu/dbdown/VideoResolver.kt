@@ -103,11 +103,14 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         return obj.getJSONObject("data")
     }
     private fun streamUrl(value: JSONObject) = https(value.optString("baseUrl").ifEmpty { value.getString("base_url") })
-    private fun douyin(link: VideoLink): VideoInfo {
+    private suspend fun douyin(link: VideoLink): VideoInfo {
         val id = link.key.removePrefix("dy:")
         if(link.url.contains("/slides/")) {
             val raw = get("https://www.iesdouyin.com/web/api/v2/aweme/slidesinfo/?aweme_ids=%5B$id%5D&request_source=200", MOBILE, "https://www.iesdouyin.com/share/slides/$id/")
-            return resolveAlbumMusic(DouyinPage.parseSlides(raw, link))
+            val info = if(DouyinPage.needsDesktopLive(raw, link)) {
+                DouyinPage.supplementDesktop(raw, DouyinDesktop.detail(id), link)
+            } else DouyinPage.parseSlides(raw, link)
+            return resolveAlbumMusic(info)
         }
         val kind = if(link.url.contains("/note/")) "note" else "video"
         var page = try {

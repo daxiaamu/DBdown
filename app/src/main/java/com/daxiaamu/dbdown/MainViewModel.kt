@@ -17,7 +17,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             homeMessages = com.daxiaamu.dbdown.update.UpdateSource(BuildConfig.UPDATE_REPOSITORY, BuildConfig.UPDATE_BRANCH)
                 .repositoryJson("config/home-messages.json", HomeMessages::parse)
         } catch(e: CancellationException) { throw e }
-        catch(_: Exception) { /* Keep the current messages; first-load failures stay invisible. */ }
+        catch(_: Exception) { homeMessages = HomeMessages.Empty }
     }
     private val context get() = getApplication<DownloaderApp>()
     val store get() = context.store

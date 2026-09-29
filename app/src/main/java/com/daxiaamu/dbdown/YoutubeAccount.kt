@@ -38,14 +38,19 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
         }
     }.orEmpty()
     val adaptive = formats("adaptiveFormats")
-    val audio = adaptive.filter { it.optString("mimeType").startsWith("audio/mp4") && it.optString("mimeType").contains("mp4a") }
+    val audio = adaptive.filter {
+        val mime = it.optString("mimeType")
+        (mime.startsWith("audio/mp4") && mime.contains("mp4a")) ||
+            (mime.startsWith("audio/webm") && mime.contains("opus"))
+    }
         .maxWithOrNull(compareBy<JSONObject> { it.optJSONObject("audioTrack")?.optBoolean("audioIsDefault") == true }
             .thenBy { it.optLong("averageBitrate").takeIf { rate -> rate > 0 } ?: it.optLong("bitrate") }
             .thenBy { it.optLong("bitrate") })
     val combined = formats("formats")
     val video = (combined + if(audio != null) adaptive else emptyList()).filter {
         val mime = it.optString("mimeType")
-        mime.startsWith("video/mp4") && listOf("avc1", "hev1", "hvc1").any(mime::contains)
+        (mime.startsWith("video/mp4") || mime.startsWith("video/webm")) &&
+            listOf("avc1", "hev1", "hvc1", "av01", "vp9", "vp09").any(mime::contains)
     }.maxWithOrNull(compareBy<JSONObject> { it.optLong("width") * it.optLong("height") }
         .thenBy { it.optInt("fps") }.thenBy { it.optLong("bitrate") }) ?: return null
     val id = details.getString("videoId")
@@ -59,7 +64,7 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
         }
     }
     return VideoInfo(link, link.key, details.optString("title", "YouTube $id"), stream(video),
-        audio = audio?.let(::stream), quality = video.optString("qualityLabel"),
+        audio = audio?.let(::stream), audioCodec = if(audio?.optString("mimeType")?.contains("opus") == true) "opus" else "aac", quality = video.optString("qualityLabel"),
         referer = link.url, userAgent = VideoResolver.DESKTOP,
         resolution = resolutionLabel(video.optInt("width"), video.optInt("height")))
 }

@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 import org.json.JSONObject
 import java.io.File
 
-/** Stream copy preserves FLAC samples, bit depth, sample rate and channels. */
+/** Copy original video/audio packets, including AV1, VP9, Opus and FLAC, into MP4. */
 internal object LosslessMuxer {
     internal fun arguments(video: File, audio: File, output: File) = arrayOf(
         "-nostdin", "-y", "-v", "error",
@@ -17,20 +17,20 @@ internal object LosslessMuxer {
         "-strict", "experimental", "-movflags", "+faststart", "-f", "mp4", output.absolutePath
     )
 
-    suspend fun merge(video: File, audio: File, output: File) = withContext(Dispatchers.IO) {
+    suspend fun merge(video: File, audio: File, output: File, expectedAudioCodec: String = "flac") = withContext(Dispatchers.IO) {
         val complete = CompletableDeferred<FFmpegSession>()
         val session = FFmpegKit.executeWithArgumentsAsync(arguments(video, audio, output)) { complete.complete(it) }
         try {
             val finished = complete.await()
-            check(ReturnCode.isSuccess(finished.returnCode) && output.length() > 0) { "FLAC 无损音轨合并失败，请重试" }
+            check(ReturnCode.isSuccess(finished.returnCode) && output.length() > 0) { "原始音视频合并失败，请重试" }
             currentCoroutineContext().ensureActive()
             val probe = FFprobeKit.executeWithArguments(arrayOf("-v", "error", "-show_streams", "-of", "json", output.absolutePath))
-            check(ReturnCode.isSuccess(probe.returnCode)) { "无法校验无损视频文件" }
+            check(ReturnCode.isSuccess(probe.returnCode)) { "无法校验合并后的视频文件" }
             val streams = JSONObject(probe.output).getJSONArray("streams")
             val types = (0 until streams.length()).map { streams.getJSONObject(it) }
             check(types.any { it.optString("codec_type") == "video" } &&
-                types.any { it.optString("codec_type") == "audio" && it.optString("codec_name") == "flac" }) {
-                "合并结果没有保留 FLAC 无损音轨"
+                types.any { it.optString("codec_type") == "audio" && it.optString("codec_name") == expectedAudioCodec }) {
+                "合并结果没有保留原始音轨"
             }
         } finally {
             if(!complete.isCompleted) {

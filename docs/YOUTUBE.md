@@ -4,7 +4,7 @@
 
 输入：watch、Shorts、youtu.be、embed、live 路径及完整 11 位 ID，统一为 watch URL 和 yt:ID 去重键。当前仅下载普通点播，直播明确提示暂不支持。
 
-画质：从渐进式 HTTP 资源选最高像素数的 AVC / HEVC MP4，优先原始 AAC 音轨并自动合并。分段 DASH/HLS 清单、AV1/VP9 资源不作为当前下载候选；因此最高兼容画质可能低于网页可播放的最高档。分辨率来自所选流，保存后使用文件实际尺寸复核。
+画质：从渐进式 HTTP 资源选择最高像素数、帧率的视频，支持 AVC / HEVC / VP9 / AV1 和 MP4 / WebM。优先原始语言，再比较码率选择 AAC 或 Opus 独立音轨，使用 FFmpeg 原样封装为 MP4，不转码。登录网页解析采用相同候选范围。分段 DASH/HLS 清单仍不作为下载候选；实际最高画质取决于上游返回的可用资源。分辨率来自所选流，保存后使用文件实际尺寸复核。
 
 R8：保留 Rhino 动态执行与 Protobuf 反射字段；排除 Android 没有的 JSR-223 引擎。NewPipe 使用 Rhino 解释模式，不执行桌面 JIT。配置参考 https://github.com/TeamNewPipe/NewPipe/blob/dev/app/proguard-rules.pro 。
 
@@ -28,3 +28,5 @@ R8：保留 Rhino 动态执行与 Protobuf 反射字段；排除 Android 没有�
 只有 ytcfg.set 配置中明确的 LOGGED_IN 布尔值才用于有效/失效判断，验证页、异常响应和网络错误不会误判过期。启动、设置页、网页登录完成及资源获取均会检查或更新状态；忽略提醒、重新登录、清除登录复用现有逻辑。
 
 验证：登录状态、域名隔离、已登录网页数据解析单元测试通过；手机已显示 Google 官方“继续使用 YouTube”的登录表单。实际账号登录及账号专属资源需要用户完成认证后验证，未宣称已通过。
+
+2026-09-30：b-Ag7meqZoU 实际解析得到 3840×2160，视频与独立音频均返回 HTTP 206。8T 使用该视频实际 4K 片段完成 MP4 合并及 Android 音视频轨道校验，FLAC 回归测试通过；完整视频在手机上的联网下载未完成验证。

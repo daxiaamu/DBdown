@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 8,
+  "policyRevision": 9,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.7: detect extensionless original album audio"
+  "reason": "0.6.15-beta.8: YouTube 4K, Live Photo compatibility and expired media URL recovery"
 }

@@ -36,7 +36,7 @@ internal class ResumableTransfer(private val client: OkHttpClient, private val t
             call.execute().use { response ->
                 context.ensureActive()
                 if(response.code == 416 && offset > 0) { offset = 0; return@repeat }
-                check(response.code == 200 || response.code == 206) { "下载服务器返回 ${response.code}，请重试以刷新视频地址" }
+                if(response.code != 200 && response.code != 206) throw MediaHttpException(response.code)
                 val body = response.body ?: error("视频内容为空")
                 check(body.contentType()?.type !in listOf("text", "application") ||
                     body.contentType()?.subtype in listOf("octet-stream", "mp4")) { "视频地址失效，请重试" }

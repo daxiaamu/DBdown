@@ -29,6 +29,42 @@ class SlidesTest {
         assertTrue(info.source.url.contains("/slides/"))
         assertTrue(runCatching { DouyinPage.parseSlides(raw.toString(), link.copy(key = "dy:1234567890")) }.isFailure)
     }
+    @Test fun desktopRestoresNewLivePhotosWithoutMixingImages() {
+        val item = JSONObject().put("aweme_id", "7688970467424551275").put("images", JSONArray())
+        val web = JSONObject().put("awemeId", "7688970467424551275").put("images", JSONArray())
+        repeat(2) { index ->
+            item.getJSONArray("images").put(image(index, false).put("uri", "image-$index").put("clip_type", 2)
+                .put("resolution_log_param", JSONObject().put("video_source_height", 1920)))
+            web.getJSONArray("images").put(JSONObject().put("uri", "image-$index").put("clipType", 5)
+                .put("livePhotoType", 1).put("video", JSONObject().put("playAddr", JSONArray()
+                    .put(JSONObject().put("src", "https://example.com/$index.mp4")))))
+        }
+        val raw = JSONObject().put("status_code", 0).put("aweme_details", JSONArray().put(item)).toString()
+        assertTrue(DouyinPage.needsDesktopLive(raw, link))
+        val restored = DouyinPage.supplementDesktop(raw, web.toString(), link)
+        assertEquals(listOf("https://example.com/0.mp4", "https://example.com/1.mp4"), restored.imageVideos)
+        web.getJSONArray("images").getJSONObject(0).put("uri", "wrong-image")
+        assertTrue(runCatching { DouyinPage.supplementDesktop(raw, web.toString(), link) }.isFailure)
+        web.getJSONArray("images").getJSONObject(0).put("uri", "image-0").getJSONObject("video").put("playAddr", JSONArray())
+        assertTrue(runCatching { DouyinPage.supplementDesktop(raw, web.toString(), link) }.isFailure)
+        web.put("awemeId", "wrong-work")
+        assertTrue(runCatching { DouyinPage.supplementDesktop(raw, web.toString(), link) }.isFailure)
+    }
+
+    @Test fun desktopVideoSelectsResolutionBeforeBitrateAndChecksIdentity() {
+        fun stream(w: Int, h: Int, bitrate: Long, url: String) = JSONObject()
+            .put("width", w).put("height", h).put("bitRate", bitrate).put("format", "mp4")
+            .put("playAddr", JSONArray().put(JSONObject().put("src", url)))
+        val raw = JSONObject().put("awemeId", "7688970467424551275").put("video", JSONObject()
+            .put("bitRateList", JSONArray().put(stream(720,1280,999999,"https://example.com/720.mp4"))
+                .put(stream(1080,1920,200000,"https://example.com/1080.mp4"))
+                .put(stream(1080,1920,300000,"https://example.com/1080-high.mp4"))))
+        assertEquals(listOf("https://example.com/1080-high.mp4", "https://example.com/1080.mp4", "https://example.com/720.mp4"),
+            DouyinPage.desktopVideoUrls(raw.toString(), link))
+        raw.put("awemeId", "wrong")
+        assertTrue(runCatching { DouyinPage.desktopVideoUrls(raw.toString(), link) }.isFailure)
+    }
+
     @Test fun motionPhotoPreservesJpegAndExactVideoBytes() {
         val jpeg = byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte(), 0xd9.toByte())
         val video = "test video bytes".toByteArray()
@@ -41,6 +77,7 @@ class SlidesTest {
             val bytes = output.readBytes()
             assertArrayEquals(video, bytes.takeLast(video.size).toByteArray())
             val metadata = bytes.toString(Charsets.UTF_8)
+            assertFalse(metadata.contains("GCamera:MicroVideo"))
             assertTrue(metadata.contains("Item:Semantic=\"MotionPhoto\""))
             assertTrue(metadata.contains("Item:Length=\"${video.size}\""))
             val xml = metadata.substring(metadata.indexOf("<x:xmpmeta"), metadata.indexOf("</x:xmpmeta>") + "</x:xmpmeta>".length)

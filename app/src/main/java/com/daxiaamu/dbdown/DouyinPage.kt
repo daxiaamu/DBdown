@@ -14,6 +14,73 @@ internal object DouyinPage {
             JSONObject().put("videoInfoRes", JSONObject().put("item_list", items))))
         return parse("<script>window._ROUTER_DATA=$router</script>", link).copy(separateAlbumMusic = true)
     }
+    fun desktopVideoUrls(raw: String, link: VideoLink): List<String> {
+        val item = JSONObject(raw)
+        check(item.optString("awemeId") == link.key.removePrefix("dy:")) { "网页返回的作品与分享链接不一致" }
+        check((item.optJSONArray("images")?.length() ?: 0) == 0) { "作品类型发生变化，请重试" }
+        val video = item.getJSONObject("video")
+        fun addresses(array: JSONArray?): List<String> = (0 until (array?.length() ?: 0)).mapNotNull {
+            validUrl(array!!.optJSONObject(it)?.optString("src").orEmpty())
+        }
+        val rates = video.optJSONArray("bitRateList")
+        val urls = (0 until (rates?.length() ?: 0)).map { rates!!.getJSONObject(it) }
+            .filter { it.optString("format").let { format -> format.isBlank() || format == "mp4" } }
+            .sortedWith(compareByDescending<JSONObject> { it.optLong("width") * it.optLong("height") }
+                .thenByDescending { it.optLong("bitRate") })
+            .flatMap { addresses(it.optJSONArray("playAddr")) }
+        return (urls + addresses(video.optJSONArray("playAddr"))).distinct().also {
+            check(it.isNotEmpty()) { "网页没有返回可下载的视频地址" }
+        }
+    }
+
+    fun needsDesktopLive(raw: String, link: VideoLink): Boolean {
+        val items = JSONObject(raw).optJSONArray("aweme_details") ?: return false
+        val item = (0 until items.length()).map { items.getJSONObject(it) }
+            .firstOrNull { it.optString("aweme_id") == link.key.removePrefix("dy:") } ?: return false
+        val images = item.optJSONArray("images") ?: return false
+        return (0 until images.length()).any { index ->
+            val image = images.getJSONObject(index)
+            image.optJSONObject("video") == null &&
+                ((image.optJSONObject("resolution_log_param")?.optInt("video_source_height") ?: 0) > 0 ||
+                    image.optInt("clip_type") in setOf(3, 5) || image.optInt("live_photo_type") == 1)
+        }
+    }
+
+    fun supplementDesktop(raw: String, desktop: String, link: VideoLink): VideoInfo {
+        val mobile = JSONObject(raw)
+        val items = mobile.getJSONArray("aweme_details")
+        val item = (0 until items.length()).map { items.getJSONObject(it) }
+            .first { it.optString("aweme_id") == link.key.removePrefix("dy:") }
+        val web = JSONObject(desktop)
+        check(web.optString("awemeId") == item.getString("aweme_id")) { "网页返回的作品与分享链接不一致" }
+        val images = item.getJSONArray("images")
+        val webImages = web.getJSONArray("images")
+        check(images.length() == webImages.length()) { "网页图集不完整，请重试" }
+        for(index in 0 until images.length()) {
+            val image = images.getJSONObject(index)
+            val webImage = webImages.getJSONObject(index)
+            check(image.getString("uri") == webImage.getString("uri")) { "网页图片与分享内容不一致，请重试" }
+            val live = webImage.optInt("livePhotoType") == 1 || webImage.optInt("clipType") in setOf(3, 5)
+            val video = webImage.optJSONObject("video")
+            if(live) {
+                val addresses = video?.optJSONArray("playAddr")
+                val urls = JSONArray()
+                for(i in 0 until (addresses?.length() ?: 0)) {
+                    validUrl(addresses!!.optJSONObject(i)?.optString("src").orEmpty())?.let { urls.put(it) }
+                }
+                check(urls.length() > 0) { "第 ${index + 1} 张实况图缺少动态资源，请重试" }
+                val normalized = JSONObject().put("play_addr", JSONObject().put("url_list", urls))
+                if(video?.optString("coverUri") == image.optString("uri")) {
+                    val covers = JSONArray()
+                    validUrl(video?.optString("originCover").orEmpty())?.let { covers.put(it) }
+                    normalized.put("cover", JSONObject().put("uri", image.getString("uri")).put("url_list", covers))
+                }
+                image.put("clip_type", 3).put("video", normalized)
+            }
+        }
+        return parseSlides(mobile.toString(), link)
+    }
+
     fun parse(page: String, link: VideoLink): VideoInfo {
         val raw = Regex("""window\._ROUTER_DATA\s*=\s*(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
             .find(page)?.groupValues?.get(1)?.trim()?.trimEnd(';')
@@ -46,7 +113,7 @@ internal object DouyinPage {
                 val video = image.optJSONObject("video")
                 val url = firstUrl(video?.optJSONObject("play_addr")?.optJSONArray("url_list"))
                     ?: firstUrl(video?.optJSONObject("play_addr_h264")?.optJSONArray("url_list"))
-                check(image.optInt("clip_type") != 3 || url != null) { "第 ${index + 1} 张 Live 图缺少动态资源" }
+                check((image.optInt("clip_type") !in setOf(3, 5) && image.optInt("live_photo_type") != 1) || url != null) { "第 ${index + 1} 张 Live 图缺少动态资源" }
                 url
             }
             val kind = if(link.url.contains("/slides/")) "slides" else "note"

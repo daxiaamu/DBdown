@@ -66,9 +66,9 @@ internal object YoutubeResolver {
             check(extractor.streamType == StreamType.VIDEO_STREAM) { "暂不支持 YouTube 直播，请在直播结束后下载普通视频" }
             val audio = bestYoutubeAudio(extractor.audioStreams)
             val video = bestYoutubeVideo(extractor.videoStreams + extractor.videoOnlyStreams, audio != null)
-                ?: error("这个 YouTube 视频没有可下载的 MP4 资源")
+                ?: error("这个 YouTube 视频没有可下载的音视频资源")
             return VideoInfo(link, link.key, extractor.name, video.content,
-                audio = audio?.content, quality = video.getResolution(),
+                audio = audio?.content, audioCodec = if(audio?.format == MediaFormat.WEBMA) "opus" else "aac", quality = video.getResolution(),
                 referer = link.url, userAgent = VideoResolver.DESKTOP,
                 resolution = resolutionLabel(video.width, video.height))
         } catch(e: org.schabi.newpipe.extractor.exceptions.ExtractionException) {
@@ -88,15 +88,14 @@ internal object YoutubeResolver {
 }
 
 internal fun bestYoutubeVideo(streams: List<VideoStream>, hasAudio: Boolean): VideoStream? = streams
-    .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.format == MediaFormat.MPEG_4 &&
-        (!it.isVideoOnly() || hasAudio) && (it.codec.orEmpty().startsWith("avc") || it.codec.orEmpty().startsWith("hev") ||
-        it.codec.orEmpty().startsWith("hvc")) }
+    .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.format in setOf(MediaFormat.MPEG_4, MediaFormat.WEBM) &&
+        (!it.isVideoOnly() || hasAudio) && listOf("avc", "hev", "hvc", "av01", "vp9", "vp09").any(it.codec.orEmpty()::startsWith) }
     .maxWithOrNull(compareBy<VideoStream> { it.width.toLong() * it.height }
         .thenBy { Regex("^[0-9]+").find(it.getResolution())?.value?.toIntOrNull() ?: 0 }.thenBy { it.fps }.thenBy { it.bitrate })
 
 /** Keep the original language before comparing bitrate; never pick a dub just for more bits. */
 internal fun bestYoutubeAudio(streams: List<AudioStream>): AudioStream? = streams.filter {
-    it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.format == MediaFormat.M4A
+    it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && (it.format == MediaFormat.M4A || (it.format == MediaFormat.WEBMA && it.codec.orEmpty().startsWith("opus")))
 }.maxWithOrNull(compareBy<AudioStream> { it.audioTrackType == AudioTrackType.ORIGINAL }
     .thenBy { if(it.averageBitrate > 0) it.averageBitrate.toLong() * 1000 else it.bitrate.toLong() }
     .thenBy { it.bitrate })

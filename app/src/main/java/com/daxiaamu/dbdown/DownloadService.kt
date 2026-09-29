@@ -103,7 +103,10 @@ class DownloadService : Service() {
                     if(v > 0 && a > 0) v + a else -1L
                 } else -1L
                 val video = File(dir, "video.mp4")
-                downloadWithFallback(listOf(info.video) + info.videoFallbacks) { url ->
+                downloadWithFallback(listOf(info.video) + info.videoFallbacks,
+                    refreshOnUnavailable = if(info.source.platform == Platform.DOUYIN) {
+                        { DouyinPage.desktopVideoUrls(DouyinDesktop.detail(info.id.removePrefix("dy:")), info.source) }
+                    } else null) { url ->
                     download(url, video, info, task.id, 0L, info.audio != null, wholeTotal)
                 }
                 val output = if(info.audio != null) {
@@ -112,6 +115,7 @@ class DownloadService : Service() {
                     state(task.id, TaskStatus.MERGING)
                     File(dir, "merged.mp4").also {
                         if(info.audioCodec.equals("flac", true)) LosslessMuxer.merge(video, audio, it)
+                        else if(info.source.platform == Platform.YOUTUBE) LosslessMuxer.merge(video, audio, it, info.audioCodec)
                         else mux(video, audio, it)
                     }
                 } else video

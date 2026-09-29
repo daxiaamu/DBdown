@@ -38,6 +38,27 @@ class YoutubeAccountTest {
         assertEquals("https://r1.googlevideo.com/audio256000", info.audio)
         assertEquals("https://r1.googlevideo.com/combined", info.video)
     }
+    @Test fun webPlayerSelects4kAndHighestDefaultOpus() {
+        fun video(codec: String, width: Int, height: Int, drm: Boolean = false) = JSONObject()
+            .put("mimeType", "video/webm; codecs=\"$codec\"").put("width", width).put("height", height)
+            .put("url", "https://r1.googlevideo.com/video$width")
+            .also { if(drm) it.put("drmFamilies", JSONArray().put("WIDEVINE")) }
+        fun audio(codec: String, rate: Int, default: Boolean) = JSONObject()
+            .put("mimeType", if(codec == "opus") "audio/webm; codecs=\"opus\"" else "audio/mp4; codecs=\"mp4a.40.2\"")
+            .put("bitrate", rate).put("url", "https://r1.googlevideo.com/audio$rate")
+            .put("audioTrack", JSONObject().put("audioIsDefault", default))
+        for(codec in listOf("vp9", "av01.0.12M.08")) {
+            val player = JSONObject().put("playabilityStatus", JSONObject().put("status", "OK"))
+                .put("videoDetails", JSONObject().put("videoId", "b-Ag7meqZoU").put("title", "4K"))
+                .put("streamingData", JSONObject().put("adaptiveFormats", JSONArray()
+                    .put(video("avc1", 1920, 1080)).put(video(codec, 3840, 2160)).put(video(codec, 7680, 4320, true))
+                    .put(audio("aac", 128000, true)).put(audio("opus", 160000, true)).put(audio("opus", 256000, false))))
+            val info = youtubeWebVideo("var ytInitialPlayerResponse = $player;", Links.detect("b-Ag7meqZoU")!!) { _, url -> url }!!
+            assertEquals("https://r1.googlevideo.com/video3840", info.video)
+            assertEquals("https://r1.googlevideo.com/audio160000", info.audio)
+            assertEquals("opus", info.audioCodec)
+        }
+    }
     @Test fun authenticatedPlayerUsesMatchingVideoAndCompatibleAudio() {
         val video=JSONObject().put("itag",137).put("mimeType","video/mp4; codecs=\"avc1.640028\"")
             .put("width",1920).put("height",1080).put("url","https://r1.googlevideo.com/video").put("qualityLabel","1080p")

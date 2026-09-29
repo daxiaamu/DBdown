@@ -9,23 +9,34 @@ import java.util.concurrent.TimeUnit
 
 /** Explicit opt-in: these checks depend on YouTube availability and are not part of offline CI. */
 class YoutubeOnlineTest {
+    @Test fun reported4kSample() = check("https://www.youtube.com/watch?v=b-Ag7meqZoU", true)
     @Test fun reportedTitleSample() = check("https://youtu.be/9j_gaUAT2yc?is=BoppiEk0ARCBg8aC")
     @Test fun normalVideo() = check("qIzGvexMjpA")
     @Test fun shorts() = check("https://www.youtube.com/shorts/-9OM3w3TWUs")
     @Test fun bareId() = check("BLKegH19KGI")
-    private fun check(input: String) {
+    private fun check(input: String, require4k: Boolean = false) {
         assumeTrue(System.getenv("DBDOWN_YOUTUBE_ONLINE") == "1")
         val info = YoutubeResolver.resolve(Links.detect(input)!!) {}
         println("YouTube ${info.source.key}: ${info.title}; ${info.resolution}; separateAudio=${info.audio != null}")
         assertTrue(info.title.isNotBlank())
         assertTrue(info.resolution.isNotBlank())
+        if(require4k) {
+            assertNotNull(info.audio)
+            assertTrue(info.resolution, Regex("[0-9]+").findAll(info.resolution).map { it.value.toInt() }.minOrNull()!! >= 2160)
+        }
+        val fixtureDir = System.getenv("DBDOWN_YOUTUBE_FIXTURES")?.let { java.io.File(it).apply { mkdirs() } }
         val client = OkHttpClient.Builder().callTimeout(45, TimeUnit.SECONDS).build()
-        listOfNotNull(info.video, info.audio).forEach { url ->
-            client.newCall(Request.Builder().url(url).header("Range", "bytes=0-65535")
+        listOfNotNull(info.video, info.audio).forEachIndexed { index, url ->
+            client.newCall(Request.Builder().url(url).header("Range", if(fixtureDir == null) "bytes=0-65535" else "bytes=0-4194303")
                 .header("User-Agent", info.userAgent).header("Referer", info.referer).build()).execute().use {
                 assertTrue("Media HTTP ${it.code}", it.isSuccessful)
-                val bytes = ByteArray(32)
-                assertTrue(it.body!!.byteStream().read(bytes) > 0)
+                if(fixtureDir != null) {
+                    java.io.File(fixtureDir, if(index == 0) "video" else "audio").outputStream().use { out -> it.body!!.byteStream().copyTo(out) }
+                    java.io.File(fixtureDir, "audio-codec").writeText(info.audioCodec)
+                } else {
+                    val bytes = ByteArray(32)
+                    assertTrue(it.body!!.byteStream().read(bytes) > 0)
+                }
                 println("Media HTTP ${it.code}; type=${it.body!!.contentType()}")
             }
         }
