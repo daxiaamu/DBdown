@@ -30,6 +30,27 @@ class AlbumParsingTest {
         item.getJSONArray("images").getJSONObject(0).put("url_list", org.json.JSONArray("[\"file:///private/image\"]"))
         assertTrue(runCatching { DouyinPage.parse(page(item.toString()), link) }.isFailure)
     }
+    @Test fun musicUriWithoutExtensionIsPreserved() {
+        val item = JSONObject("""{"aweme_id":"7689856421856364794","images":[{"url_list":["https://images.example.com/1.png"]}],
+            "music":{"play_url":{"uri":"https://music.example.com/original?token=valid"}}}""")
+        assertEquals("https://music.example.com/original?token=valid", DouyinPage.parse(page(item.toString()), link).music)
+        item.remove("music")
+        item.put("video", JSONObject("""{"play_addr":{"url_list":["https://cdn.example.com/obj/ies-music/12345"]}}"""))
+        assertEquals("https://cdn.example.com/obj/ies-music/12345", DouyinPage.parse(page(item.toString()), link).music)
+    }
+    @Test fun selectsOriginalThenBestQualityWithoutWatermarkAndPreservesSignatures() {
+        val image = JSONObject("""{"uri":"original-id","url_list":[
+            "https://cdn.example.com/img~tplv-dy-aweme-images:q75.webp?sig=display",
+            "https://cdn.example.com/img~tplv-dy-aweme-images:q100.webp?sig=high"],
+            "download_url_list":["https://cdn.example.com/img~tplv-dy-water-v2:user:1920:1440.webp?sig=water"]}""")
+        assertEquals("https://cdn.example.com/img~tplv-dy-aweme-images:q100.webp?sig=high", DouyinPage.bestImageUrl(image))
+        image.put("video", JSONObject("""{"cover":{"uri":"original-id","url_list":["https://cdn.example.com/obj/original?sig=original"]}}"""))
+        assertEquals("https://cdn.example.com/obj/original?sig=original", DouyinPage.bestImageUrl(image))
+        image.getJSONObject("video").getJSONObject("cover").put("uri", "different-cover")
+        assertTrue(DouyinPage.bestImageUrl(image)!!.contains("q100"))
+        image.remove("url_list"); image.remove("video")
+        assertNull(DouyinPage.bestImageUrl(image))
+    }
     @Test fun neverUsesRecommendedDifferentWork() {
         assertTrue(runCatching { DouyinPage.parse(page("""{"aweme_id":"9999999999999999999","images":[{"url_list":["https://images.example.com/x"]}]}"""), link) }.isFailure)
     }

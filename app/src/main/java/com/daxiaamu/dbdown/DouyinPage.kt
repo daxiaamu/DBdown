@@ -32,14 +32,13 @@ internal object DouyinPage {
         if(images != null && images.length() > 0) {
             val urls = (0 until images.length()).map { index ->
                 val image = images.getJSONObject(index)
-                firstUrl(image.optJSONArray("download_url_list")) ?: firstUrl(image.optJSONArray("url_list")) ?: error("第 ${index + 1} 张图片没有可用地址")
+                bestImageUrl(image) ?: error("第 ${index + 1} 张图片没有可用的无水印地址")
             }
-            val music = firstUrl(item.optJSONObject("music")?.optJSONObject("play_url")?.optJSONArray("url_list"))
-                ?: validUrl(play?.optString("uri").orEmpty())?.takeIf { url ->
-                    // Some note responses expose the original MP3 here; never save the slideshow MP4 as music.
-                    url.toHttpUrlOrNull()?.encodedPath?.substringAfterLast('.')?.lowercase() in
-                        setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus")
-                }
+            val musicAddress = item.optJSONObject("music")?.optJSONObject("play_url")
+            val music = firstUrl(musicAddress?.optJSONArray("url_list"))
+                ?: validUrl(musicAddress?.optString("uri").orEmpty())
+                ?: (listOfNotNull(validUrl(play?.optString("uri").orEmpty())) + urls(play?.optJSONArray("url_list")))
+                    .firstOrNull(::isAudioAddress)
             val imageVideos = (0 until images.length()).map { index ->
                 val image = images.getJSONObject(index)
                 val video = image.optJSONObject("video")
@@ -81,6 +80,34 @@ internal object DouyinPage {
         return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "自动画质",
             referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1))
     }
+    internal fun bestImageUrl(image: JSONObject): String? {
+        val candidates = urls(image.optJSONArray("url_list")).toMutableList()
+        // Live cover addresses can point to the same original image, without the q75 display transform.
+        val cover = image.optJSONObject("video")?.optJSONObject("cover")
+        if(!image.optString("uri").isBlank() && cover?.optString("uri") == image.optString("uri")) {
+            candidates += urls(cover.optJSONArray("url_list"))
+        }
+        candidates += urls(image.optJSONArray("download_url_list"))
+        return candidates.distinct().filterNot { isWatermarkedImage(it) }.sortedWith(
+            compareByDescending<String> { !it.toHttpUrlOrNull()!!.encodedPath.contains("~tplv-") }
+                .thenByDescending { Regex("""(?:[:_-])q(\d{1,3})(?:[.:_]|$)""")
+                    .find(it.toHttpUrlOrNull()!!.encodedPath)?.groupValues?.get(1)?.toIntOrNull() ?: 0 }
+        ).firstOrNull()
+    }
+    private fun isWatermarkedImage(url: String): Boolean {
+        val path = url.toHttpUrlOrNull()!!.encodedPath.lowercase()
+        return "dy-water" in path || "watermark" in path
+    }
+    private fun isAudioAddress(url: String): Boolean {
+        val parsed = url.toHttpUrlOrNull() ?: return false
+        val path = parsed.encodedPath.lowercase()
+        val extension = path.substringAfterLast('.')
+        return extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus") ||
+            (extension !in setOf("mp4", "webm", "mov", "m3u8") &&
+                ("/ies-music" in path || "-music-" in parsed.host))
+    }
+    private fun urls(array: JSONArray?): List<String> =
+        (0 until (array?.length() ?: 0)).mapNotNull { validUrl(array!!.optString(it)) }
     private fun firstUrl(array: JSONArray?): String? = array?.let {
         (0 until it.length()).firstNotNullOfOrNull { i -> validUrl(it.optString(i)) }
     }
