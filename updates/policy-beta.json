@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 3,
+  "policyRevision": 4,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.2: carousel fix and ColorOS live photo compatibility"
+  "reason": "0.6.15-beta.3: smooth vertical announcements and link underlines"
 }
