@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -59,11 +60,17 @@ internal data class HomeMessages(val enabled: Boolean, val intervalSeconds: Int,
         val pager = rememberPagerState { config.messages.size }
         val lifecycle = LocalLifecycleOwner.current.lifecycle
         val context = LocalContext.current
-        LaunchedEffect(config, active, pager.settledPage, pager.isScrollInProgress) {
-            if(active && config.messages.size > 1 && !pager.isScrollInProgress) {
+        val dragging by pager.interactionSource.collectIsDraggedAsState()
+        // Automatic scrolling must not cancel its own animation when isScrollInProgress changes.
+        LaunchedEffect(config, active, dragging, lifecycle) {
+            if(active && config.messages.size > 1 && !dragging) {
                 lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                    delay(config.intervalSeconds * 1000L)
-                    pager.animateScrollToPage((pager.settledPage + 1) % config.messages.size)
+                    while(true) {
+                        delay(config.intervalSeconds * 1000L)
+                        if(!pager.isScrollInProgress) {
+                            pager.animateScrollToPage((pager.settledPage + 1) % config.messages.size)
+                        }
+                    }
                 }
             }
         }
@@ -73,9 +80,13 @@ internal data class HomeMessages(val enabled: Boolean, val intervalSeconds: Int,
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(message.url))) }
                     .onFailure { Toast.makeText(context, "无法打开链接", Toast.LENGTH_SHORT).show() }
             } else Modifier).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                Text(message.text, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(message.text, modifier = Modifier.weight(1f, fill = false), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if(message.url != null) Glyph("link", "打开链接", Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
         Spacer(Modifier.height(12.dp))

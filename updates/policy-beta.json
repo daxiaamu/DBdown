@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 2,
+  "policyRevision": 3,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.1: live photos, lossless audio and home messages"
+  "reason": "0.6.15-beta.2: carousel fix and ColorOS live photo compatibility"
 }

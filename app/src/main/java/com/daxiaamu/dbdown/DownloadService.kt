@@ -224,6 +224,11 @@ class DownloadService : Service() {
                         finally { bitmap.recycle() }
                     }
                     output = File(dir, "slide-$index-MP.jpg")
+                    // Write EXIF before appending the video; later metadata rewrites can remove the trailer.
+                    androidx.exifinterface.media.ExifInterface(jpeg).apply {
+                        setAttribute(androidx.exifinterface.media.ExifInterface.TAG_USER_COMMENT, "Oplus_8388608")
+                        saveAttributes()
+                    }
                     MotionPhoto.write(jpeg, video, output)
                     mime = "image/jpeg"; extension = "jpg"
                 } else {

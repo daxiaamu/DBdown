@@ -11,8 +11,8 @@ android {
         minSdk = 33
         targetSdk = 37
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        versionCode = 24
-        versionName = "0.6.15-beta.1"
+        versionCode = 25
+        versionName = "0.6.15-beta.2"
         buildConfigField("String", "UPDATE_REPOSITORY", "\"daxiaamu/DBdown\"")
         buildConfigField("String", "UPDATE_BRANCH", "\"main\"")
     }
@@ -39,6 +39,7 @@ android {
     }
 }
 dependencies {
+    implementation("androidx.exifinterface:exifinterface:1.4.2")
     implementation("dev.ffmpegkit-maintained:ffmpeg-kit-min:8.1.7")
     implementation("com.arthenica:smart-exception-java:0.2.1")
     implementation("com.github.teamnewpipe:NewPipeExtractor:v0.26.5") {

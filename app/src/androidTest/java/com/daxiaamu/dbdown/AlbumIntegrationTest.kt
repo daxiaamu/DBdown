@@ -63,7 +63,7 @@ class AlbumIntegrationTest {
         }
     }
 
-    @Test fun mixedPortraitAndLandscapeImagesProduceCompleteSilentVideo() = runBlocking {
+    @Test fun mixedPortraitAndLandscapeImagesSpanCompleteMusic() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dir = File(context.cacheDir, "album-fixture-${System.nanoTime()}").apply { mkdirs() }
         try {
@@ -72,13 +72,19 @@ class AlbumIntegrationTest {
                 bitmap.eraseColor(if(i == 0) Color.RED else Color.BLUE)
                 File(dir, "$i.png").also { file -> file.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }; bitmap.recycle() }
             }
-            val output = File(dir, "silent.mp4")
-            AlbumExporter.export(context, images, null, output)
+            val music = File(dir, "music.m4a")
+            val session = com.arthenica.ffmpegkit.FFmpegKit.executeWithArguments(arrayOf(
+                "-y", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100",
+                "-t", "6", "-c:a", "aac", music.absolutePath))
+            assertTrue(com.arthenica.ffmpegkit.ReturnCode.isSuccess(session.returnCode))
+            val output = File(dir, "album.mp4")
+            AlbumExporter.export(context, images, music, output)
             val extractor = MediaExtractor()
             try {
                 extractor.setDataSource(output.absolutePath)
-                assertEquals(1, extractor.trackCount)
-                val format = extractor.getTrackFormat(0)
+                assertEquals(2, extractor.trackCount)
+                val format = (0 until extractor.trackCount).map(extractor::getTrackFormat)
+                    .first { it.getString(MediaFormat.KEY_MIME)?.startsWith("video/") == true }
                 assertEquals("video/avc", format.getString(MediaFormat.KEY_MIME))
                 assertTrue(format.getLong(MediaFormat.KEY_DURATION) in 5_800_000L..6_200_000L)
             } finally { extractor.release() }
