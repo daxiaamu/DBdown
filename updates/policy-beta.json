@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 6,
+  "policyRevision": 7,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.5: original album images and soundtrack parsing"
+  "reason": "0.6.15-beta.6: consistent media action icons"
 }

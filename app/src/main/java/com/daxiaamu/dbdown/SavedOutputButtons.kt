@@ -59,12 +59,12 @@ internal fun outputKind(mime: String) = when {
                         modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                SavedActionButton(subtle = detailed, onClick = {
+                SavedActionButton(onClick = {
                     if(files.size == 1) open(files.first()) else selection = files
                 }) {
-                    Glyph(if(kind == "image") "image" else "play", if(kind == "image") "打开图片" else "播放$label", Modifier.size(if(detailed) 20.dp else 24.dp))
+                    Glyph(kind, if(kind == "image") "打开图片" else "播放$label", Modifier.size(20.dp))
                 }
-                SavedActionButton(subtle = detailed, onClick = {
+                SavedActionButton(onClick = {
                     sharing = true
                     scope.launch {
                         try {
@@ -90,7 +90,7 @@ internal fun outputKind(mime: String) = when {
                                 .onFailure { notice("无法打开系统分享面板，请稍后重试") }
                         } finally { sharing = false }
                     }
-                }, enabled = !sharing) { Glyph("share", "分享$label", Modifier.size(if(detailed) 20.dp else 24.dp)) }
+                }, enabled = !sharing) { Glyph("share", "分享$label", Modifier.size(20.dp)) }
             }
         }
     }
@@ -109,10 +109,9 @@ internal fun outputKind(mime: String) = when {
     }
 }
 
-@Composable private fun SavedActionButton(subtle: Boolean, onClick: () -> Unit, enabled: Boolean = true,
+@Composable private fun SavedActionButton(onClick: () -> Unit, enabled: Boolean = true,
     content: @Composable () -> Unit) {
-    if(subtle) IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp),
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(40.dp),
         colors = IconButtonDefaults.iconButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
         content = content)
-    else FilledTonalIconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp), content = content)
 }
