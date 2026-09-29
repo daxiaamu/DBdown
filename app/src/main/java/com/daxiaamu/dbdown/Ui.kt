@@ -263,11 +263,8 @@ private val paths = mapOf(
         "发现${suggestion?.source?.platform?.label.orEmpty()}${if(suggestion?.images?.isNotEmpty() == true) "图集" else "视频"}",
         suggestion?.title.orEmpty(), "下载作品",
         buildList {
-            add(ClipboardPromptAction(suggestion?.saveActionLabel ?: "下载") {
+            add(ClipboardPromptAction("下载") {
                 if(vm.downloadSuggestion()) requestNotifications()
-            })
-            if(suggestion?.images?.isNotEmpty() == true && !suggestion.music.isNullOrBlank() && !suggestion.separateAlbumMusic) add(ClipboardPromptAction("合成视频") {
-                if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications()
             })
         }, open = { suggestion?.let { openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
             AnimatedVisibility(suggestion != null,
@@ -287,9 +284,8 @@ private val paths = mapOf(
                                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 TextButton(onClick = { vm.clipboardSuggestion = null }) { Text("忽略") }
-                                if(info.images.isNotEmpty() && !info.music.isNullOrBlank() && !info.separateAlbumMusic) TextButton(onClick = { if(vm.downloadSuggestion(AlbumMode.VIDEO)) requestNotifications() }) { Text("合成视频") }
                                 Button(onClick = { if(vm.downloadSuggestion()) requestNotifications() }, shape = RoundedCornerShape(14.dp)) {
-                                    Text(info.saveActionLabel)
+                                    Text("下载")
                                 }
                             }
                         }
@@ -301,14 +297,6 @@ private val paths = mapOf(
 @Composable private fun LinkDialog(vm: MainViewModel, haze: HazeState, submit: () -> Unit) {
     val context = LocalContext.current
     val detected = remember(vm.input) { Links.detect(vm.input) }
-    var inputInfo by remember(detected?.key) { mutableStateOf<VideoInfo?>(null) }
-    LaunchedEffect(detected?.key) {
-        if(detected?.platform != Platform.DOUYIN) return@LaunchedEffect
-        delay(400)
-        try { inputInfo = VideoResolver().resolve(detected) }
-        catch(e: kotlinx.coroutines.CancellationException) { throw e }
-        catch(_: Exception) { /* Download can still resolve again; never offer an unverified video conversion. */ }
-    }
     val focus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var candidate by remember { mutableStateOf<String?>(null) }
@@ -371,24 +359,15 @@ private val paths = mapOf(
                                     vm.error = null; candidate = null
                                 }) { Text("粘贴") }
                             }
-                            val album = inputInfo
-                            val slides = album?.separateAlbumMusic == true || detected?.url?.contains("/slides/") == true
-                            if(slides) {
-                                Text(if(album != null && album.music.isNullOrBlank()) "逐张保存图片" else "图片和配乐分开保存",
-                                    style = MaterialTheme.typography.bodySmall)
-                            } else if(album != null && album.images.isNotEmpty() && !album.music.isNullOrBlank()) {
-                                Text("图集保存为", style = MaterialTheme.typography.bodyMedium)
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilterChip(selected = vm.albumMode == AlbumMode.IMAGES, onClick = { vm.albumMode = AlbumMode.IMAGES }, label = { Text("图片") })
-                                    FilterChip(selected = vm.albumMode == AlbumMode.VIDEO, onClick = { vm.albumMode = AlbumMode.VIDEO }, label = { Text("视频") })
-                                }
-                                if(vm.albumMode == AlbumMode.VIDEO) Text("按完整配乐时长平均展示每张图片；无配乐时仅保存图片", style = MaterialTheme.typography.bodySmall)
+                            if(detected?.platform == Platform.DOUYIN) {
+                                Text("图集按原始素材保存，图片与配乐分开下载", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                             TextButton(onClick = { vm.inputVisible = false }) { Text("取消") }
-                            Button(onClick = submit, enabled = vm.input.isNotBlank(), shape = RoundedCornerShape(14.dp)) { Text(inputInfo?.saveActionLabel ?: "下载") }
+                            Button(onClick = submit, enabled = vm.input.isNotBlank(), shape = RoundedCornerShape(14.dp)) { Text("下载") }
                         }
                     }
                 }
@@ -645,7 +624,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("保存位置", style = MaterialTheme.typography.titleMedium)
                 Text("视频：Movies / 逗逼下载器\n图片：Pictures / 逗逼下载器", style = MaterialTheme.typography.bodyLarge)
-                Text("视频和图片保存到系统相册，独立配乐保存到音乐目录。B 站和 YouTube 音视频自动合并；普通抖音图集可合成为视频，slides 图片与配乐分开保存。",
+                Text("视频和图片保存到系统相册，独立配乐保存到音乐目录。B 站和 YouTube 音视频自动合并；抖音图集按原始素材保存，图片与配乐分开下载。",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

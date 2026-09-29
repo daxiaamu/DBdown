@@ -23,7 +23,10 @@ class AlbumParsingTest {
     }
     @Test fun missingMusicRemainsSilentAndMissingImagesFail() {
         val item = JSONObject("""{"aweme_id":"7689856421856364794","images":[{"url_list":["https://images.example.com/1.png"]}]}""")
+        item.put("video", JSONObject().put("play_addr", JSONObject().put("uri", "https://example.com/slideshow.mp4")))
         assertNull(DouyinPage.parse(page(item.toString()), link).music)
+        item.put("music", JSONObject().put("play_url", JSONObject().put("url_list", org.json.JSONArray().put("https://example.com/original.mp3"))))
+        assertEquals("https://example.com/original.mp3", DouyinPage.parse(page(item.toString()), link).music)
         item.getJSONArray("images").getJSONObject(0).put("url_list", org.json.JSONArray("[\"file:///private/image\"]"))
         assertTrue(runCatching { DouyinPage.parse(page(item.toString()), link) }.isFailure)
     }

@@ -35,9 +35,11 @@ internal object DouyinPage {
                 firstUrl(image.optJSONArray("download_url_list")) ?: firstUrl(image.optJSONArray("url_list")) ?: error("第 ${index + 1} 张图片没有可用地址")
             }
             val music = firstUrl(item.optJSONObject("music")?.optJSONObject("play_url")?.optJSONArray("url_list"))
-                ?: if(link.url.contains("/slides/")) null else (
-                    validUrl(play?.optString("uri").orEmpty())
-                        ?: firstUrl(play?.optJSONArray("url_list"))?.replace("/playwm/", "/play/"))
+                ?: validUrl(play?.optString("uri").orEmpty())?.takeIf { url ->
+                    // Some note responses expose the original MP3 here; never save the slideshow MP4 as music.
+                    url.toHttpUrlOrNull()?.encodedPath?.substringAfterLast('.')?.lowercase() in
+                        setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus")
+                }
             val imageVideos = (0 until images.length()).map { index ->
                 val image = images.getJSONObject(index)
                 val video = image.optJSONObject("video")

@@ -105,14 +105,14 @@ class ClipboardLivePromptTest {
                 vm.clipboardSuggestion = VideoInfo(link, link.key, "流体云图集测试", "", referer = "", userAgent = "", images = listOf("fixture"))
             }
             val prompt = waitPrompt()
-            assertEquals(listOf("保存图片", "合成视频", "忽略"), prompt.actions.map { it.title.toString() })
+            assertEquals(listOf("下载", "忽略"), prompt.actions.map { it.title.toString() })
             rule.waitForIdle()
             screenshot("native-download-foreground.png")
-            prompt.actions.first { it.title.toString() == "合成视频" }.actionIntent.send()
+            prompt.actions.first { it.title.toString() == "下载" }.actionIntent.send()
             rule.waitUntil(10000) { vm.store.tasks.value.any { it.key == link.key } }
             rule.runOnIdle {
                 val task = vm.store.tasks.value.first { it.key == link.key }; fixtureId = task.id
-                assertEquals(AlbumMode.VIDEO, task.albumMode); assertEquals(TaskStatus.PAUSED, task.status)
+                assertEquals(AlbumMode.IMAGES, task.albumMode); assertEquals(TaskStatus.PAUSED, task.status)
                 assertNull(vm.clipboardSuggestion)
             }
             rule.waitUntil(5000) { notification() == null }

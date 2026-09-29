@@ -147,54 +147,6 @@ class DownloadService : Service() {
         }
     }
     private suspend fun downloadAlbum(task: DownloadTask, info: VideoInfo, dir: File) {
-        if(info.separateAlbumMusic) { downloadSlides(task, info, dir); return }
-        val mode = effectiveAlbumMode(task.albumMode, info.images.isNotEmpty(), info.music)
-        var downloaded = 0L
-        val files = info.images.mapIndexed { index, url ->
-            currentCoroutineContext().ensureActive()
-            val file = File(dir, "image-$index")
-            download(url, file, info, task.id, downloaded, index != info.images.lastIndex || mode == AlbumMode.VIDEO)
-            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
-            check(bounds.outWidth > 0 && bounds.outHeight > 0) { "第 ${index + 1} 张图片下载不完整" }
-            downloaded += file.length()
-            file
-        }
-        if(mode == AlbumMode.VIDEO) {
-            val music = File(dir, "music.mp3").also { download(requireNotNull(info.music), it, info, task.id, downloaded, false) }
-            state(task.id, TaskStatus.MERGING)
-            val output = File(dir, "album.mp4")
-            AlbumExporter.export(this, files, music, output)
-            validateVideo(output)
-            state(task.id, TaskStatus.SAVING)
-            val uri = publish(output, info.title, task.id)
-            store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(), outputUris = listOf(uri.toString()),
-                mimeType = "video/mp4", bytes = output.length(), total = output.length(), speed = 0, error = "") }
-            notifyResult(task.id, info.title, "图集视频已保存到 Movies/逗逼下载器", uri)
-            return
-        }
-        state(task.id, TaskStatus.SAVING)
-        val published = mutableListOf<Uri>()
-        try {
-            files.forEachIndexed { index, file ->
-                currentCoroutineContext().ensureActive()
-                val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
-                val mime = bounds.outMimeType ?: error("无法识别图片格式")
-                val extension = when(mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; "image/heif", "image/heic" -> "heic"; "image/avif" -> "avif"; else -> error("暂不支持此图片格式") }
-                published += publish(file, info.title, "${task.id.take(8)}-${(index+1).toString().padStart(3, '0')}", mime, extension, true)
-            }
-            currentCoroutineContext().ensureActive()
-            store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = published.first().toString(),
-                outputUris = published.map(Uri::toString), mimeType = "image/*", bytes = downloaded, total = downloaded, speed = 0, error = "") }
-        } catch(e: Exception) {
-            // A cancelled/failed set must not leave a partially published album before retrying.
-            published.forEach { runCatching { contentResolver.delete(it, null, null) } }
-            throw e
-        }
-        notifyResult(task.id, info.title, "${files.size} 张图片已保存到 Pictures/逗逼下载器", published.first())
-    }
-    private suspend fun downloadSlides(task: DownloadTask, info: VideoInfo, dir: File) {
         val published = mutableListOf<Uri>()
         var downloaded = 0L
         var saved = 0L
@@ -234,7 +186,7 @@ class DownloadService : Service() {
                 } else {
                     output = image
                     mime = bounds.outMimeType ?: error("图片格式无法识别")
-                    extension = when(mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; else -> error("暂不支持此静态图片格式") }
+                    extension = when(mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; "image/heif", "image/heic" -> "heic"; "image/avif" -> "avif"; else -> error("暂不支持此静态图片格式") }
                 }
                 state(task.id, TaskStatus.SAVING)
                 published += publish(output, info.title, "${task.id.take(8)}-${index + 1}", mime, extension, image = true, motion = motion != null)
