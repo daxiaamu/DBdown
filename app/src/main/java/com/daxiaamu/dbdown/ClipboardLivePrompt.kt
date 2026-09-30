@@ -16,6 +16,13 @@ import android.os.SystemClock
 import android.provider.Settings
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.Lifecycle
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import java.util.UUID
 
 internal data class ClipboardPromptAction(val label: String, val run: () -> Unit)
@@ -33,13 +40,10 @@ internal object ClipboardLivePrompt {
         val intents: MutableList<PendingIntent> = mutableListOf()
     )
     private var current: Entry? = null
-    val isColorOs: Boolean get() = listOf(Build.BRAND, Build.MANUFACTURER).any {
-        it.lowercase() in setOf("oppo", "oplus", "oneplus", "realme")
-    }
-    val avoidSystemIsland: Boolean get() = Build.VERSION.SDK_INT >= 36 || isColorOs
-    fun allowed(context: Context): Boolean = Build.VERSION.SDK_INT >= 36 && runCatching {
+    fun allowed(context: Context): Boolean = runCatching {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.areNotificationsEnabled() && manager.canPostPromotedNotifications()
+        manager.areNotificationsEnabled() &&
+            manager.getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE
     }.getOrDefault(false)
 
     fun settings(context: Context) {
@@ -51,8 +55,8 @@ internal object ClipboardLivePrompt {
     }
 
     fun post(context: Context, title: String, text: String, shortText: String,
-             actions: List<ClipboardPromptAction>, open: () -> Unit, dismiss: () -> Unit): String? {
-        if(Build.VERSION.SDK_INT < 36 || !allowed(context)) return null
+             actions: List<ClipboardPromptAction>, open: () -> Unit, dismiss: () -> Unit, expire: () -> Unit = dismiss): String? {
+        if(!allowed(context)) return null
         check(Looper.myLooper() == Looper.getMainLooper())
         current?.let { cancel(it.token) }
         val app = context.applicationContext
@@ -73,31 +77,28 @@ internal object ClipboardLivePrompt {
             }
             val ignore = pending(-2, broadcast = true)
             val notification = Notification.Builder(app, CHANNEL).setSmallIcon(R.drawable.ic_download)
-                .setContentTitle(title).setContentText(text.take(160)).setShortCriticalText(shortText)
+                .setContentTitle(title).setContentText(text.take(160))
                 .setContentIntent(pending(-1)).setDeleteIntent(ignore)
                 .setCategory(Notification.CATEGORY_STATUS).setVisibility(Notification.VISIBILITY_PRIVATE)
                 .setOngoing(true).setOnlyAlertOnce(true).setShowWhen(false).setTimeoutAfter(LIFETIME_MS)
                 .setAllowSystemGeneratedContextualActions(false)
-                .addExtras(Bundle().apply { putBoolean(Notification.EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+                .apply {
+                    if(Build.VERSION.SDK_INT >= 36) {
+                        setShortCriticalText(shortText)
+                        addExtras(Bundle().apply { putBoolean(Notification.EXTRA_REQUEST_PROMOTED_ONGOING, true) })
+                    }
+                }
             entry.actions.forEachIndexed { index, action ->
                 notification.addAction(Notification.Action.Builder(null, action.label, pending(index)).build())
             }
             notification.addAction(Notification.Action.Builder(null, "忽略", ignore).build())
             manager.notify(NOTIFICATION_ID, notification.build())
             handler.postAtTime({
-                if(current?.token == entry.token) { cancel(entry.token); entry.dismiss() }
+                if(current?.token == entry.token) { cancel(entry.token); expire() }
             }, entry.token, SystemClock.uptimeMillis() + LIFETIME_MS)
             entry.token
         } catch(_: Exception) { cancel(entry.token); null }
     }
-
-    fun promoted(token: String): Boolean = current?.takeIf { it.token == token }?.let { entry ->
-        Build.VERSION.SDK_INT >= 36 && runCatching {
-            entry.context.getSystemService(NotificationManager::class.java).activeNotifications.any {
-                it.id == NOTIFICATION_ID && (it.notification.flags and Notification.FLAG_PROMOTED_ONGOING) != 0
-            }
-        }.getOrDefault(false)
-    } ?: false
 
     fun cancel(token: String) {
         val entry = current?.takeIf { it.token == token } ?: return
@@ -124,27 +125,34 @@ class ClipboardPromptDismissReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) { ClipboardLivePrompt.handle(intent) }
 }
 
-/** Promotion does not prove foreground visibility: OEMs can hide the app's own capsule. Keep an inline fallback. */
+/** Use system notifications on every supported Android version; the system chooses their presentation. */
 @Composable internal fun ClipboardPromptEffect(
     key: String?, title: String, text: String, shortText: String, actions: List<ClipboardPromptAction>,
-    open: () -> Unit, dismiss: () -> Unit
+    open: () -> Unit, dismiss: () -> Unit, expire: () -> Unit = dismiss
 ) {
     val context = LocalContext.current
+    var notificationsAllowed by remember { mutableStateOf(ClipboardLivePrompt.allowed(context)) }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        notificationsAllowed = ClipboardLivePrompt.allowed(context)
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { notificationsAllowed = ClipboardLivePrompt.allowed(context) }
+    LaunchedEffect(key) {
+        if(key != null && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            val prefs = context.getSharedPreferences("settings", 0)
+            if(!prefs.getBoolean("notificationAsked", false)) {
+                prefs.edit().putBoolean("notificationAsked", true).apply()
+                permission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
     val latestActions by rememberUpdatedState(actions)
     val latestOpen by rememberUpdatedState(open)
     val latestDismiss by rememberUpdatedState(dismiss)
-    DisposableEffect(key) {
+    val latestExpire by rememberUpdatedState(expire)
+    DisposableEffect(key, title, text, shortText, actions.map { it.label }, notificationsAllowed) {
         val token = key?.let { ClipboardLivePrompt.post(context, title, text, shortText,
             actions.mapIndexed { index, action -> ClipboardPromptAction(action.label) { latestActions.getOrNull(index)?.run?.invoke() } },
-            { latestOpen() }, { latestDismiss() }) }
-        val handler = Handler(Looper.getMainLooper())
-        val monitor = object : Runnable {
-            override fun run() {
-                if(token == null) return
-                if(ClipboardLivePrompt.promoted(token)) handler.postDelayed(this, 1000) else ClipboardLivePrompt.cancel(token)
-            }
-        }
-        if(token != null) handler.postDelayed(monitor, 400)
-        onDispose { handler.removeCallbacks(monitor); token?.let(ClipboardLivePrompt::cancel) }
+            { latestOpen() }, { latestDismiss() }, { latestExpire() }) }
+        onDispose { token?.let(ClipboardLivePrompt::cancel) }
     }
 }

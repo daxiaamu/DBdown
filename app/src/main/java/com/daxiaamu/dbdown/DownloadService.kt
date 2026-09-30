@@ -94,7 +94,8 @@ class DownloadService : Service() {
         try {
             state(task.id, TaskStatus.RESOLVING)
             val link = Links.detect(task.source) ?: error("链接不受支持")
-            val info = VideoResolver { trackCall(task.id, it, worker) }.resolve(link)
+            val info = (application as DownloaderApp).takePreparedDownload(task.id)
+                ?: VideoResolver { trackCall(task.id, it, worker) }.resolve(link,task.selection)
             currentCoroutineContext().ensureActive()
             if(!store.markResolved(task.id, info)) throw CancellationException("Task no longer active")
             withContext(Dispatchers.IO) {
@@ -111,7 +112,8 @@ class DownloadService : Service() {
             if(store.get(task.id)?.status?.active == true) {
                 val message = when(e) {
                     is java.net.UnknownHostException -> "网络不可用，请联网后重试"
-                    is java.net.SocketTimeoutException -> "连接超时，请稍后重试"
+                    is java.net.SocketTimeoutException -> if(store.get(task.id)?.status == TaskStatus.RESOLVING) "解析连接超时，请稍后重试"
+                        else "传输超时，自动重试未成功；已保留进度，请重试"
                     is java.net.SocketException, is java.io.EOFException -> "下载连接被服务器中断，备用线路也未成功，请稍后重试"
                     is org.json.JSONException -> "平台返回的数据格式发生变化，请稍后重试"
                     else -> e.message?.take(180) ?: "下载失败，请重试"
@@ -122,7 +124,7 @@ class DownloadService : Service() {
         } finally {
             calls.remove(task.id)
             withContext(NonCancellable + Dispatchers.IO) {
-                if(store.get(task.id)?.status !in setOf(TaskStatus.PAUSED, TaskStatus.QUEUED)) dir.deleteRecursively()
+                if(store.get(task.id)?.status !in setOf(TaskStatus.PAUSED, TaskStatus.QUEUED, TaskStatus.FAILED)) dir.deleteRecursively()
             }
         }
     }
@@ -148,7 +150,7 @@ class DownloadService : Service() {
         val video = File(dir, "video.mp4")
         if(info.videoPlan != null) downloadSegments(info.videoPlan, video, info, task.id, progress, "video")
         else downloadWithFallback(listOf(info.video) + info.videoFallbacks,
-            refreshOnUnavailable = if(info.source.platform == Platform.DOUYIN) {
+            refreshOnUnavailable = if(info.source.platform == Platform.DOUYIN && task.selection == null) {
                 { DouyinPage.desktopVideoUrls(DouyinDesktop.detail(info.id.removePrefix("dy:")), info.source) }
             } else null) { url ->
             download(url, video, info, task.id, progress, "video")
@@ -156,23 +158,26 @@ class DownloadService : Service() {
         val output = if(info.audio != null) {
             val audio = File(dir, "audio.m4a")
             if(info.audioPlan != null) downloadSegments(info.audioPlan, audio, audioInfo, task.id, progress, "audio")
-            else download(info.audio, audio, audioInfo, task.id, progress, "audio")
+            else downloadWithFallback(listOf(info.audio) + info.audioFallbacks) { url ->
+                download(url, audio, audioInfo, task.id, progress, "audio")
+            }
             state(task.id, TaskStatus.MERGING)
             File(dir, "merged.mp4").also {
                 if(info.audioCodec.equals("flac", true)) LosslessMuxer.merge(video, audio, it)
                 else if(info.source.platform == Platform.YOUTUBE) LosslessMuxer.merge(video, audio, it, info.audioCodec)
                 else mux(video, audio, it)
             }
-        } else if(info.videoPlan != null) {
+        } else if(info.videoPlan != null || info.source.platform == Platform.YOUTUBE) {
             state(task.id, TaskStatus.MERGING)
-            File(dir, "merged.mp4").also { LosslessMuxer.remux(video, it) }
+            File(dir, "merged.mp4").also { LosslessMuxer.remux(video, it,requireAudio=info.specifications?.let { specs -> specs.videos.find { option -> option.id == specs.selected.video }?.hasAudio } != false) }
         } else video
         validateVideo(output)
         state(task.id, TaskStatus.SAVING)
         val uri = publish(output, info.title, task.id)
         val measured = savedResolution(this@DownloadService, task.copy(uri = uri.toString(), mimeType = "video/mp4"))
+        val measuredFps = savedFrameRate(this@DownloadService,uri.toString())
         store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(),
-            resolution = measured.ifBlank { it.resolution }, bytes = progress.snapshot().bytes, total = progress.snapshot().bytes, speed = 0, error = "") }
+            resolution = measured.ifBlank { it.resolution }, fps = measuredFps.takeIf { it > 0 } ?: it.fps, bytes = progress.snapshot().bytes, total = progress.snapshot().bytes, speed = 0, error = "") }
         notifyResult(task.id, info.title, "已保存到 Movies/逗逼下载器", uri)
     }
 

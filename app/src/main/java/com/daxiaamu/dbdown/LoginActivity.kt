@@ -5,8 +5,6 @@ import android.content.Intent
 import android.os.Bundle
 import android.webkit.*
 import androidx.activity.viewModels
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -45,9 +43,8 @@ class LoginActivity : ComponentActivity() {
         setContent {
             DownloaderTheme {
                 BackHandler { finish() }
-                val haze = remember { HazeState() }
                 Box(Modifier.fillMaxSize()) {
-                Surface(Modifier.fillMaxSize().hazeSource(haze)) {
+                Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                         LoginToolbar()
                         // Keep the web viewport stable: changing progress must not resize the page.
@@ -58,7 +55,7 @@ class LoginActivity : ComponentActivity() {
                             factory = { view }, onRelease = { releaseBrowser(it) })
                     }
                 }
-                ClipboardSuggestionOverlay(clipboardModel, haze,
+                ClipboardSuggestionNotifications(clipboardModel,
                     requestNotifications = {
                         startActivity(Intent(this@LoginActivity, MainActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)

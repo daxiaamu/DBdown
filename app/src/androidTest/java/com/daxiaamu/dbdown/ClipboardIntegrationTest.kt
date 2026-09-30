@@ -31,12 +31,12 @@ class ClipboardIntegrationTest {
             }
             try {
                 Thread.sleep(400)
-                scenario.onActivity { assertNull(vm!!.clipboardSuggestion) }
+                scenario.onActivity { assertNull(vm!!.clipboardPrompt) }
                 scenario.onActivity {
                     manager!!.setPrimaryClip(ClipData.newPlainText("test", "https://www.douyin.com/user/12345678"))
                 }
                 Thread.sleep(400)
-                scenario.onActivity { assertNull(vm!!.clipboardSuggestion) }
+                scenario.onActivity { assertNull(vm!!.clipboardPrompt) }
                 scenario.onActivity {
                     manager!!.setPrimaryClip(ClipData.newPlainText("test", "https://www.douyin.com/video/7641264887980657961"))
                 }
@@ -44,9 +44,9 @@ class ClipboardIntegrationTest {
                 val deadline = System.currentTimeMillis() + 60000
                 while(!found && System.currentTimeMillis() < deadline) {
                     Thread.sleep(250)
-                    scenario.onActivity { found = vm!!.clipboardSuggestion != null }
+                    scenario.onActivity { found = vm!!.clipboardPrompt is ClipboardPrompt.Ready }
                 }
-                assertTrue("Valid Douyin clip must resolve and show a prompt", found)
+                assertTrue("Valid Douyin clip must be recognized locally and show a prompt", found)
                 val instrumentation = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation()
                 Thread.sleep(6000) // Let the OEM clipboard overlay expire before capturing our own banner.
                 val screenshot = instrumentation.uiAutomation.takeScreenshot()
@@ -55,13 +55,13 @@ class ClipboardIntegrationTest {
                 }
                 screenshot.recycle()
                 scenario.onActivity {
-                    assertEquals(Platform.DOUYIN, vm!!.clipboardSuggestion!!.source.platform)
-                    assertTrue(vm!!.clipboardSuggestion!!.title.isNotBlank())
-                    vm!!.clipboardSuggestion = null
+                    assertEquals(Platform.DOUYIN, vm!!.clipboardPrompt!!.link.platform)
+                    assertTrue((vm!!.clipboardPrompt as ClipboardPrompt.Ready).info.title.isNotBlank())
+                    vm!!.dismissClipboard()
                 }
                 scenario.recreate()
                 Thread.sleep(1000)
-                scenario.onActivity { activity -> vm = ViewModelProvider(activity)[MainViewModel::class.java]; assertNull("Dismissed clip must not prompt again", vm!!.clipboardSuggestion) }
+                scenario.onActivity { activity -> vm = ViewModelProvider(activity)[MainViewModel::class.java]; assertNull("Dismissed clip must not prompt again", vm!!.clipboardPrompt) }
                 scenario.onActivity { vm!!.setClipboard(false) }
                 scenario.recreate()
                 scenario.onActivity { activity ->
@@ -72,7 +72,7 @@ class ClipboardIntegrationTest {
                 scenario.onActivity {
                     oldClip?.let { clip -> manager!!.setPrimaryClip(clip) } ?: manager!!.clearPrimaryClip()
                     vm!!.setClipboard(previousSetting)
-                    vm!!.clipboardSuggestion = null
+                    vm!!.dismissClipboard()
                 }
             }
         }

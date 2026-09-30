@@ -15,7 +15,7 @@ data class VideoInfo(
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
     val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false, val musicCandidates: List<String> = emptyList(),
-    val videoPlan: SegmentPlan? = null, val audioPlan: SegmentPlan? = null, val audioUserAgent: String? = null
+    val videoPlan: SegmentPlan? = null, val audioPlan: SegmentPlan? = null, val audioUserAgent: String? = null, val audioFallbacks: List<String> = emptyList(), val fps: Float = 0f, val specifications: MediaSpecifications? = null, val directVideoTracks: List<DirectVideoTrack> = emptyList()
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
@@ -25,13 +25,13 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         val client = OkHttpClient.Builder().cookieJar(PlatformCookieJar()).connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(40, TimeUnit.SECONDS).callTimeout(60, TimeUnit.SECONDS).build()
     }
-    suspend fun resolve(link: VideoLink): VideoInfo = withContext(Dispatchers.IO) {
+    suspend fun resolve(link: VideoLink, selection: TrackSelection? = null): VideoInfo = withContext(Dispatchers.IO) {
         WebAccounts.refresh(true)
         val actual = expand(link)
         when(actual.platform) {
-            Platform.YOUTUBE -> YoutubeResolver.resolve(actual, { coroutineContext.ensureActive() }, trackCall = trackCall)
-            Platform.BILI -> bili(actual)
-            Platform.DOUYIN -> douyin(actual)
+            Platform.YOUTUBE -> YoutubeResolver.resolve(actual, { coroutineContext.ensureActive() }, trackCall = trackCall, requested = selection)
+            Platform.BILI -> bili(actual, selection)
+            Platform.DOUYIN -> douyin(actual, selection)
         }
     }
     private fun get(url: String, ua: String = DESKTOP, referer: String = "https://www.bilibili.com/"): String {
@@ -66,7 +66,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         }
         error("分享链接跳转次数过多")
     }
-    private fun bili(link: VideoLink): VideoInfo {
+    private fun bili(link: VideoLink, selection: TrackSelection?): VideoInfo {
         val rawId = link.url.substringAfter("/video/").substringBefore("?").trimEnd('/')
         val query = if(rawId.startsWith("av")) "aid=${rawId.drop(2)}" else "bvid=$rawId"
         val data = api(get("https://api.bilibili.com/x/web-interface/view?$query"))
@@ -80,18 +80,16 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         val title = data.getString("title") + if(pages.length() > 1) " · P${link.part} ${page.optString("part")}" else ""
         val dash = play.optJSONObject("dash")
         if (dash != null) {
-            val videoArray = dash.getJSONArray("video")
-            val video = bestBiliVideo(videoArray) ?: error("这个视频没有可合并的 AVC / HEVC 视频流")
-            val audio = bestBiliAudio(dash) ?: error("视频没有可合并的 FLAC / AAC 音轨")
-            return VideoInfo(canonical, canonical.key, title, streamUrl(video), streamUrl(audio),
-                "${video.optInt("height")}P", canonical.url, DESKTOP,
-                resolution = resolutionLabel(video.optInt("width"), video.optInt("height")), audioCodec = audio.optString("codecs"))
+            return biliVideoInfo(canonical,title,dash,selection)
+
         }
         val segments = play.optJSONArray("durl") ?: error("此视频暂无可下载资源，可能需要登录或会员权限")
         check(segments.length() == 1) { "暂不支持此视频的多段 FLV 格式" }
         val segment = segments.getJSONObject(0)
         check(play.optString("format").contains("mp4")) { "暂不支持此视频格式" }
-        return VideoInfo(canonical, canonical.key, title, https(segment.getString("url")), quality = "默认画质", referer = canonical.url, userAgent = DESKTOP)
+        check(selection == null || (selection.video == "bili:combined" && selection.audio == null)) { "所选规格已不可用，请重新选择" }
+        return VideoInfo(canonical, canonical.key, title, https(segment.getString("url")), quality = "默认画质", referer = canonical.url, userAgent = DESKTOP, videoFallbacks = biliBackupUrls(segment),
+            specifications = MediaSpecifications(listOf(TrackOption("bili:combined","原始画质", "自带音轨",true)),emptyList(),TrackSelection("bili:combined")))
     }
     private fun api(text: String): JSONObject {
         val obj = JSONObject(text)
@@ -107,7 +105,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         return obj.getJSONObject("data")
     }
     private fun streamUrl(value: JSONObject) = https(value.optString("baseUrl").ifEmpty { value.getString("base_url") })
-    private suspend fun douyin(link: VideoLink): VideoInfo {
+    private suspend fun douyin(link: VideoLink, selection: TrackSelection?): VideoInfo {
         val id = link.key.removePrefix("dy:")
         if(link.url.contains("/slides/")) {
             val raw = get("https://www.iesdouyin.com/web/api/v2/aweme/slidesinfo/?aweme_ids=%5B$id%5D&request_source=200", MOBILE, "https://www.iesdouyin.com/share/slides/$id/")
@@ -128,7 +126,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         val info = DouyinPage.parse(page, link)
         if(info.images.isNotEmpty()) return resolveAlbumMusic(info)
         // A usable share URL can still point to a lower-quality encode. Compare before downloading.
-        return try {
+        val enriched = try {
             withTimeoutOrNull(12_000) {
                 DouyinPage.supplementVideo(page, DouyinDesktop.detail(id), info)
             } ?: info
@@ -137,6 +135,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         } catch(_: Exception) {
             info
         }
+        return DouyinPage.selectSpecification(enriched, selection)
     }
     private fun resolveAlbumMusic(info: VideoInfo): VideoInfo {
         if(info.images.isEmpty() || info.music != null) return info

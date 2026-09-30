@@ -23,6 +23,10 @@ internal class SegmentTransfer(client: OkHttpClient, private val track: (Call) -
     }.build()
     suspend fun download(plan: SegmentPlan, output: File, ua: String, referer: String,
         progress: (Long,Long,Long) -> Unit) {
+        retryMediaTransfer { downloadOnce(plan, output, ua, referer, progress) }
+    }
+    private suspend fun downloadOnce(plan: SegmentPlan, output: File, ua: String, referer: String,
+        progress: (Long,Long,Long) -> Unit) {
         require(plan.segments.isNotEmpty())
         val context = currentCoroutineContext()
         val digest = MessageDigest.getInstance("SHA-256")

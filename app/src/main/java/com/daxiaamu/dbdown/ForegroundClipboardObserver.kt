@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 internal class ForegroundClipboardObserver(
     private val activity: ComponentActivity,
     private val enabled: () -> Boolean,
-    private val inspect: (String?) -> Unit
+    private val inspect: (ClipboardContent?) -> Unit
 ) : DefaultLifecycleObserver {
     private val clipboard = activity.getSystemService(ClipboardManager::class.java)
     private var pending: Job? = null
@@ -34,7 +34,7 @@ internal class ForegroundClipboardObserver(
     }
 
     fun check() {
-        if(resumed && enabled()) inspect(readClipboardText(activity, excludeSensitive = true))
+        if(resumed && enabled()) inspect(readClipboardContent(activity, excludeSensitive = true))
     }
 
     override fun onPause(owner: LifecycleOwner) {

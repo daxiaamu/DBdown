@@ -24,6 +24,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -111,6 +112,7 @@ private val paths = mapOf(
     "retry" to "M4,10 A8,8 0,1 1,5,18 M4,4 L4,10 L10,10",
     "more" to "M12,4 L12,5 M12,11 L12,12 M12,18 L12,19",
     "clipboard" to "M9,5 L5,5 L5,21 L19,21 L19,5 L15,5 M9,3 L15,3 L15,7 L9,7 Z M9,12 L15,12 M9,16 L13,16",
+    "expand" to "M6,9 L12,15 L18,9",
     "arrow" to "M5,12 L19,12 M13,6 L19,12 L13,18"
 )
 @Composable internal fun Glyph(name: String, description: String? = null, modifier: Modifier = Modifier, tint: Color = LocalContentColor.current) {
@@ -157,7 +159,6 @@ private val paths = mapOf(
     val paused by vm.store.paused.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haze = remember { HazeState() }
-    val dialogHaze = remember { HazeState() }
     val updateHaze = remember { HazeState() }
     val updateManager = (context.applicationContext as DownloaderApp).updates
     val updateState by updateManager.state.collectAsStateWithLifecycle()
@@ -182,8 +183,7 @@ private val paths = mapOf(
     Surface(Modifier.fillMaxSize().then(if(updateState.dialog) Modifier.hazeSource(updateHaze) else Modifier),
         color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))) {
-            Box(Modifier.fillMaxSize().hazeSource(haze)
-                .then(if(vm.inputVisible) Modifier.hazeSource(dialogHaze) else Modifier)) {
+            Box(Modifier.fillMaxSize().hazeSource(haze)) {
                 if(vm.settings) {
                     SettingsPage(vm, topInset) { enabled -> vm.setClipboard(enabled); if(enabled) checkClipboard() }
                 } else HorizontalPager(
@@ -204,7 +204,7 @@ private val paths = mapOf(
                                 horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 Glyph("link", tint = MaterialTheme.colorScheme.primary)
                                 Text("粘贴视频链接", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                                Glyph("arrow", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                HomePasteButton(pager.currentPage == 0 && !vm.inputVisible, vm::openInput)
                             }
                         }
                         }
@@ -249,99 +249,43 @@ private val paths = mapOf(
                 FloatingTabs(pager, haze,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
-            ClipboardSuggestionOverlay(vm, haze, requestNotifications)
+            ClipboardSuggestionNotifications(vm, requestNotifications)
         }
     }
-    if(vm.inputVisible) LinkDialog(vm, dialogHaze) { if(vm.submit()) requestNotifications() }
+    if(vm.inputVisible) LinkDialog(vm) { if(vm.submit()) requestNotifications() }
     DeleteTasksDialog(vm)
+    SpecificationDialog(vm.specificationEditor)
     com.daxiaamu.dbdown.update.UpdateOverlay(updateManager, updateHaze)
 }
 
 
-@Composable internal fun BoxScope.ClipboardSuggestionOverlay(vm: MainViewModel, haze: HazeState,
-    requestNotifications: () -> Unit = {}, openInput: (String) -> Unit = vm::openInput) {
-    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 72.dp
-    val suggestion = vm.clipboardSuggestion?.takeUnless { vm.inputVisible || !vm.clipboardEnabled }
-    ClipboardPromptEffect(suggestion?.id,
-        "发现${suggestion?.source?.platform?.label.orEmpty()}${if(suggestion?.images?.isNotEmpty() == true) "图集" else "视频"}",
-        suggestion?.title.orEmpty(), "下载作品",
-        buildList {
-            add(ClipboardPromptAction("下载") {
-                if(vm.downloadSuggestion()) requestNotifications()
-            })
-        }, open = { suggestion?.let { openInput(it.source.url) } }, dismiss = { vm.clipboardSuggestion = null })
-            AnimatedVisibility(suggestion != null,
-                modifier = Modifier.align(Alignment.TopCenter).padding(horizontal = 16.dp).padding(top = topInset - 72.dp + if(ClipboardLivePrompt.avoidSystemIsland) 96.dp else 8.dp),
-                enter = slideInVertically(tween(220)) { -it } + fadeIn(),
-                exit = slideOutVertically(tween(180)) { -it } + fadeOut()) {
-                vm.clipboardSuggestion?.let { info ->
-                    GlassPrompt(haze, Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("downloadHeadsUp")) {
-                        Column(Modifier.padding(start = 18.dp, end = 10.dp, top = 10.dp, bottom = 8.dp)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
-                                Text("发现${info.source.platform.label}${if(info.images.isEmpty()) "视频" else "图集 · ${info.images.size} 张"}", style = MaterialTheme.typography.titleMedium,
-                                    modifier = Modifier.weight(1f).padding(start = 10.dp))
-                                IconButton(onClick = { vm.clipboardSuggestion = null }) { Glyph("close", "忽略此视频") }
-                            }
-                            Text(info.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 8.dp))
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                TextButton(onClick = { vm.clipboardSuggestion = null }) { Text("忽略") }
-                                Button(onClick = { if(vm.downloadSuggestion()) requestNotifications() }, shape = RoundedCornerShape(14.dp)) {
-                                    Text("下载")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-}
-
-@Composable private fun LinkDialog(vm: MainViewModel, haze: HazeState, submit: () -> Unit) {
+@Composable private fun LinkDialog(vm: MainViewModel, submit: () -> Unit) {
     val context = LocalContext.current
     val detected = remember(vm.input) { Links.detect(vm.input) }
     val focus = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
     var candidate by remember { mutableStateOf<String?>(null) }
-    var inspected by remember { mutableStateOf<String?>(null) }
+    var inspected by remember { mutableStateOf<ClipboardContent?>(null) }
     Dialog(onDismissRequest = { vm.inputVisible = false }, properties = DialogProperties(
         usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val windowFocused = LocalWindowInfo.current.isWindowFocused
         LaunchedEffect(focused, windowFocused, vm.clipboardEnabled) {
             if(!windowFocused || !vm.clipboardEnabled) return@LaunchedEffect
-            val text = readClipboardText(context, excludeSensitive = true) ?: return@LaunchedEffect
-            if(text == inspected) return@LaunchedEffect
-            inspected = text
+            val content = readClipboardContent(context, excludeSensitive = true) ?: return@LaunchedEffect
+            if(content == inspected) return@LaunchedEffect
+            inspected = content
+            val text = content.text
             val link = Links.detect(text)
             candidate = text.takeIf { link != null && link.key != Links.detect(vm.input)?.key }
         }
         LaunchedEffect(Unit) { focus.requestFocus() }
         LaunchedEffect(vm.clipboardEnabled) { if(!vm.clipboardEnabled) candidate = null }
-        ClipboardPromptEffect(candidate,
-            "剪贴板中有${candidate?.let(Links::detect)?.platform?.label.orEmpty()}链接", "是否填入下载输入框？", "填入链接",
-            listOf(ClipboardPromptAction("填入") { candidate?.let { vm.input = it; vm.error = null }; candidate = null }),
-            open = { candidate?.let { vm.input = it; vm.error = null }; candidate = null }, dismiss = { candidate = null })
         Column(Modifier.fillMaxSize().safeDrawingPadding().imePadding().padding(horizontal = 24.dp, vertical = 12.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 Surface(shape = RoundedCornerShape(28.dp), tonalElevation = 6.dp, modifier = Modifier.widthIn(max = 560.dp).fillMaxWidth()) {
                     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("添加下载", style = MaterialTheme.typography.titleLarge)
-                        AnimatedVisibility(candidate != null, enter = slideInVertically { -it } + fadeIn(), exit = fadeOut()) {
-                            candidate?.let { text ->
-                                GlassPrompt(haze, Modifier.widthIn(max = 560.dp).fillMaxWidth().testTag("inputClipboardHeadsUp")) {
-                                    Row(Modifier.padding(start = 16.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Glyph("clipboard", tint = MaterialTheme.colorScheme.primary)
-                                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                                            Text("${Links.detect(text)?.platform?.label.orEmpty()}链接", style = MaterialTheme.typography.titleMedium)
-                                            Text("填入剪贴板链接？", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        }
-                                        TextButton(onClick = { vm.input = text; vm.error = null; candidate = null }) { Text("填入") }
-                                        IconButton(onClick = { candidate = null }, modifier = Modifier.size(40.dp)) { Glyph("close", "忽略剪贴板链接") }
-                                    }
-                                }
-                            }
-                        }
                         Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("粘贴链接或完整分享文案", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             OutlinedTextField(value = vm.input, onValueChange = { vm.input = it.take(16000); vm.error = null; candidate = null },
@@ -353,14 +297,14 @@ private val paths = mapOf(
                                 }, modifier = Modifier.testTag("clearLinkInput")) { Glyph("close", "清空输入") } }} else null,
                                 isError = vm.error != null, maxLines = 5)
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Text(if(detected != null) "已识别：${detected.platform.label}链接" else "自动识别视频或图集",
+                                Text(if(candidate != null) "剪贴板中有${candidate?.let(Links::detect)?.platform?.label.orEmpty()}链接" else if(detected != null) "已识别：${detected.platform.label}链接" else "自动识别视频或图集",
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = if(detected != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.weight(1f))
                                 TextButton(onClick = {
-                                    vm.input = readClipboardText(context, excludeSensitive = false).orEmpty()
+                                    vm.input = candidate ?: readClipboardText(context, excludeSensitive = false).orEmpty()
                                     vm.error = null; candidate = null
-                                }) { Text("粘贴") }
+                                }, modifier = Modifier.testTag("fillClipboardLink")) { Text(if(candidate != null) "填入" else "粘贴") }
                             }
                             if(detected?.platform == Platform.DOUYIN) {
                                 Text("图集按原始素材保存，图片与配乐分开下载", style = MaterialTheme.typography.bodySmall,
@@ -378,12 +322,6 @@ private val paths = mapOf(
         }
     }
 }
-
-internal fun readClipboardText(context: android.content.Context, excludeSensitive: Boolean): String? = runCatching {
-    val clip = context.getSystemService(android.content.ClipboardManager::class.java).primaryClip ?: return@runCatching null
-    if(excludeSensitive && clip.description.extras?.getBoolean("android.content.extra.IS_SENSITIVE", false) == true) return@runCatching null
-    if(clip.itemCount == 0) null else clip.getItemAt(0).text?.toString()?.take(16000)
-}.getOrNull()
 
 @Composable private fun DownloadsPage(tasks: List<DownloadTask>, vm: MainViewModel, requestNotifications: () -> Unit, topInset: Dp) {
     var filter by rememberSaveable { mutableIntStateOf(0) }
@@ -439,8 +377,9 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     LaunchedEffect(task.uri, task.status) {
         if(task.status == TaskStatus.COMPLETED && task.uri.isNotBlank()) {
             val measured = withContext(Dispatchers.IO) { savedResolution(context, task) }
-            if(measured.isNotEmpty() && measured != task.resolution) vm.store.update(task.id) {
-                if(it.uri == task.uri && it.status == TaskStatus.COMPLETED) it.copy(resolution = measured) else it
+            val fps = withContext(Dispatchers.IO) { if(task.mimeType.startsWith("video/")) savedFrameRate(context,task.uri) else 0f }
+            if((measured.isNotEmpty() && measured != task.resolution) || (fps > 0 && fps != task.fps)) vm.store.update(task.id) {
+                if(it.uri == task.uri && it.status == TaskStatus.COMPLETED) it.copy(resolution = measured.ifBlank { it.resolution },fps=fps.takeIf { it > 0 } ?: it.fps) else it
             }
         }
     }
@@ -493,9 +432,15 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                 SavedOutputButtons(task) { vm.notice = it }
             } else Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) } ?: "—" },
-                        style = MaterialTheme.typography.labelLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val isVideo = !task.mimeType.startsWith("image/") && !task.quality.contains("张图片")
+                    Row(Modifier.then(if(isVideo) Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled=!vm.deleting) {
+                        vm.specificationEditor.open(task.id)
+                    }.testTag("specification-${task.id}") else Modifier).padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text(if(isVideo) videoSpecification(task.resolution.ifBlank { task.quality.takeIf { it.matches(Regex("[0-9]+P")) }.orEmpty() },task.fps) else task.resolution.ifBlank { "—" },
+                            style=MaterialTheme.typography.labelLarge,maxLines=1,overflow=TextOverflow.Ellipsis,
+                            modifier=Modifier.weight(1f,fill=false),color=MaterialTheme.colorScheme.onSurfaceVariant)
+                        if(isVideo) Glyph("expand",modifier=Modifier.padding(start=4.dp).size(14.dp),tint=MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     if(task.status == TaskStatus.DOWNLOADING) {
                         Text(buildAnnotatedString {
                             withStyle(SpanStyle(color = MaterialTheme.colorScheme.primary)) {
@@ -524,6 +469,11 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
     val files = request.withFiles == true
     val choice = request.withFiles == null
     val count = request.ids.size
+    if(files) {
+        DestructiveFileConfirmation("删除任务和文件？","将删除 $count 个任务，以及这些任务保存的所有视频、图片和音频。文件删除后无法恢复。未完成的下载会停止，临时文件会清理。",
+            "确认删除文件",vm.deleting,vm::dismissDeletion,{ vm.confirmDeletion(true) },"confirmDeleteTasks")
+        return
+    }
     AlertDialog(onDismissRequest = vm::dismissDeletion, shape = RoundedCornerShape(28.dp),
         title = { Text(if(choice) "清空下载记录" else if(files) "删除任务和文件？" else "删除任务？") },
         text = {
@@ -591,7 +541,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
                     Switch(checked = vm.clipboardEnabled, onCheckedChange = onClipboard)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("仅识别 B 站、抖音和 YouTube 视频，同一视频不重复提醒。普通文本与敏感内容不会保存。", style = MaterialTheme.typography.bodyMedium,
+                Text("仅识别 B 站、抖音和 YouTube 视频，每次重新复制都会提醒，同一次复制不重复提醒。普通文本与敏感内容不会保存。", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -606,7 +556,7 @@ internal fun readClipboardText(context: android.content.Context, excludeSensitiv
             Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("流体云与实时活动", style = MaterialTheme.typography.titleMedium)
-                    Text("在系统通知设置中允许显示实时活动。支持时优先使用流体云；应用前台保留避开顶部的提示。",
+                    Text("在系统通知设置中允许显示实时活动。剪贴板提示统一使用系统通知，支持时由系统显示为流体云。",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Glyph("arrow")

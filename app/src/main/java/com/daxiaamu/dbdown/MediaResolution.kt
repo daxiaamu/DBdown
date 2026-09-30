@@ -28,3 +28,23 @@ internal fun savedResolution(context: Context, task: DownloadTask): String = run
         }
     }
 }.getOrDefault("")
+
+internal fun savedFrameRate(context: Context, value: String): Float = runCatching {
+    val uri=Uri.parse(value)
+    if(uri.scheme != "content") return 0f
+    val extractor=android.media.MediaExtractor()
+    try {
+        extractor.setDataSource(context,uri,null)
+        for(i in 0 until extractor.trackCount) {
+            val format=extractor.getTrackFormat(i)
+            if(format.getString(android.media.MediaFormat.KEY_MIME)?.startsWith("video/") == true) {
+                val fps=if(format.containsKey(android.media.MediaFormat.KEY_FRAME_RATE)) format.getNumber(android.media.MediaFormat.KEY_FRAME_RATE)?.toFloat() ?: 0f else 0f
+                if(fps > 0 && fps.isFinite()) return fps
+            }
+        }
+    } finally { extractor.release() }
+    MediaMetadataRetriever().use {
+        it.setDataSource(context,uri)
+        frameRate(it.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CAPTURE_FRAMERATE).orEmpty())
+    }
+}.getOrDefault(0f)

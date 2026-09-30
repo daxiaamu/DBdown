@@ -51,7 +51,7 @@ internal object YoutubeResolver {
             }
         })
     }
-    fun resolve(link: VideoLink, ensureActive: () -> Unit = {}, onCandidates: (List<YoutubeStream>) -> Unit = {}, onClient: (String,String) -> Unit = { _,_ -> }, trackCall: (Call) -> Unit): VideoInfo {
+    fun resolve(link: VideoLink, ensureActive: () -> Unit = {}, onCandidates: (List<YoutubeStream>) -> Unit = {}, onClient: (String,String) -> Unit = { _,_ -> }, requested: TrackSelection? = null, trackCall: (Call) -> Unit): VideoInfo {
         val register: (Call)->Unit = { ensureActive(); trackCall(it) }
         fun active() {
             ensureActive()
@@ -117,7 +117,11 @@ internal object YoutubeResolver {
                     ?.mapNotNull(::youtubeExtractorVideo).orEmpty()
             }
             onCandidates(candidates)
-            val selection=youtubeSelectStreams(candidates) { stream -> attempt {
+            val eligible = if(requested == null) candidates else candidates.filter {
+                if(it.video) youtubeTrackId(it) == requested.video else youtubeTrackId(it) == requested.audio
+            }
+            check(requested?.audio == null || eligible.none { it.video && it.audio }) { "视频自带音轨，不能选择额外音轨" }
+            val selection=youtubeSelectStreams(eligible,allowSilent=requested != null && requested.audio == null) { stream -> attempt {
                 val ready=manifests.prepare(stream)
                 val probes=ready.plan?.segments?.let { listOf(it.first(),it.last()).distinct() }
                     ?: listOf(MediaSegment(ready.url))
@@ -129,13 +133,17 @@ internal object YoutubeResolver {
                 }
                 ready
             } }
+            if(requested != null && (selection == null || (requested.audio != null && selection.second == null)))
+                error("所选音视频规格暂不可用，请重新选择")
             if(selection==null) {
                 if(extractionError!=null) throw extractionError
                 error("暂未获取到可下载的 YouTube 资源，请重试或在设置中登录")
             }
             val title=responses.firstOrNull()?.optJSONObject("videoDetails")?.optString("title")
                 ?: if(fetched) extractor.name else "YouTube " + link.key.removePrefix("yt:")
-            return youtubeVideoInfo(link,title,selection)
+            val effective = if(selection.first.audio && requested == null) selection.first to null else selection
+            val specs = youtubeSpecifications(candidates,selection).copy(selected=TrackSelection(youtubeTrackId(effective.first),effective.second?.let(::youtubeTrackId)))
+            return youtubeVideoInfo(link,title,effective).copy(specifications=specs)
         } catch(e: org.schabi.newpipe.extractor.exceptions.ExtractionException) {
             val message = when(e) {
                 is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException,

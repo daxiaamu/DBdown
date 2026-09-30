@@ -23,7 +23,7 @@ class ForegroundClipboardObserverTest {
             scenario.onActivity { activity ->
                 clipboard = activity.getSystemService(ClipboardManager::class.java)
                 oldClip = clipboard.primaryClip
-                observer = ForegroundClipboardObserver(activity, { enabled }) { seen.add(it) }
+                observer = ForegroundClipboardObserver(activity, { enabled }) { seen.add(it?.text) }
                 activity.lifecycle.addObserver(observer)
                 clipboard.setPrimaryClip(ClipData.newPlainText("test", "foreground clipboard test"))
             }
@@ -53,6 +53,34 @@ class ForegroundClipboardObserverTest {
                     observer.onPause(activity)
                     activity.lifecycle.removeObserver(observer)
                     if(oldClip != null) clipboard.setPrimaryClip(oldClip!!) else clipboard.clearPrimaryClip()
+                }
+            }
+        }
+    }
+    @Test fun recopyingIdenticalTextHasANewSystemTimestamp() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var before: ClipboardContent? = null
+            var oldClip: ClipData? = null
+            scenario.onActivity { activity ->
+                val manager = activity.getSystemService(ClipboardManager::class.java)
+                oldClip = manager.primaryClip
+                manager.setPrimaryClip(ClipData.newPlainText("test", "same content"))
+                before = readClipboardContent(activity, true)
+            }
+            try {
+                Thread.sleep(100)
+                scenario.onActivity { activity ->
+                    val manager = activity.getSystemService(ClipboardManager::class.java)
+                    manager.setPrimaryClip(ClipData.newPlainText("test", "same content"))
+                    val after = readClipboardContent(activity, true)
+                    assertNotNull(before)
+                    assertEquals(before!!.text, after!!.text)
+                    assertTrue(after.timestamp > before!!.timestamp)
+                }
+            } finally {
+                scenario.onActivity { activity ->
+                    val manager = activity.getSystemService(ClipboardManager::class.java)
+                    if(oldClip != null) manager.setPrimaryClip(oldClip!!) else manager.clearPrimaryClip()
                 }
             }
         }

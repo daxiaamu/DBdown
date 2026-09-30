@@ -30,7 +30,7 @@ class SegmentTransferTest {
         MockWebServer().use { s ->
             val one=s.url("/1").toString(); val two=s.url("/2").toString(); val file=temp.newFile()
             val plan=SegmentPlan(listOf(MediaSegment(one),MediaSegment(two)),"v")
-            s.enqueue(MockResponse().setBody("first")); s.enqueue(MockResponse().setResponseCode(503))
+            s.enqueue(MockResponse().setBody("first")); s.enqueue(MockResponse().setResponseCode(403))
             assertTrue(runCatching { transfer().download(plan,file,"test",one) { _,_,_ -> } }.isFailure)
             s.enqueue(MockResponse().setBody("second"))
             transfer().download(plan,file,"test",one) { _,_,_ -> }
@@ -74,6 +74,17 @@ class SegmentTransferTest {
             val url=s.url("/media").toString(); s.enqueue(MockResponse().setResponseCode(302).setHeader("Location","http://127.0.0.1:${s.port}/forbidden"))
             assertTrue(runCatching { transfer().download(SegmentPlan(listOf(MediaSegment(url)),"v"),temp.newFile(),"test",url) { _,_,_ -> } }.isFailure)
             assertEquals(1,s.requestCount)
+        }
+    }
+    @Test fun transientFragmentFailureRetriesWithoutDownloadingCompletedFragmentsAgain() = runBlocking {
+        MockWebServer().use { s ->
+            val one=s.url("/1").toString(); val two=s.url("/2").toString(); val file=temp.newFile()
+            s.enqueue(MockResponse().setBody("first"))
+            s.enqueue(MockResponse().setResponseCode(503))
+            s.enqueue(MockResponse().setBody("second"))
+            transfer().download(SegmentPlan(listOf(MediaSegment(one),MediaSegment(two)),"v"),file,"test",one) { _,_,_ -> }
+            assertEquals("firstsecond",file.readText())
+            assertEquals(listOf("/1","/2","/2"),List(3) { s.takeRequest().path })
         }
     }
 }

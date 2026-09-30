@@ -67,12 +67,12 @@ internal fun youtubeDirectStreams(player: JSONObject, link: VideoLink,
     return result
 }
 
-internal fun youtubeSelectStreams(streams: List<YoutubeStream>, prepare: (YoutubeStream) -> YoutubeStream?): Pair<YoutubeStream,YoutubeStream?>? {
+internal fun youtubeSelectStreams(streams: List<YoutubeStream>, allowSilent: Boolean = false, prepare: (YoutubeStream) -> YoutubeStream?): Pair<YoutubeStream,YoutubeStream?>? {
     val unique = streams.distinctBy { listOf(it.url,it.formatId,it.language,it.protocol.name) }
     // A bad highest audio must not prevent a lower working original track from being used.
     val audio = unique.filter { it.audio && !it.video }.sortedWith(youtubeAudioOrder.reversed())
         .firstNotNullOfOrNull(prepare)
-    val video = unique.filter { it.video && (it.audio || audio != null) }.sortedWith(youtubeVideoOrder.reversed())
+    val video = unique.filter { it.video && (it.audio || audio != null || allowSilent) }.sortedWith(youtubeVideoOrder.reversed())
         .firstNotNullOfOrNull(prepare) ?: return null
     return video to audio
 }
@@ -83,7 +83,7 @@ internal fun youtubeVideoInfo(link: VideoLink, title: String, selection: Pair<Yo
     return VideoInfo(link,link.key,title,video.url,audio=audio?.url,audioCodec=audio?.audioCodec.orEmpty(),
         quality="${video.height}p${if(video.fps>30) video.fps.toInt() else ""}${if(video.hdr) " HDR" else ""}",
         referer=link.url,userAgent=video.userAgent,resolution=resolutionLabel(video.width,video.height),
-        videoPlan=video.plan,audioPlan=audio?.plan,audioUserAgent=audio?.userAgent)
+        videoPlan=video.plan,audioPlan=audio?.plan,audioUserAgent=audio?.userAgent,fps=video.fps)
 }
 
 internal fun youtubeAudioCodec(mime: String): String = when {
@@ -98,3 +98,19 @@ internal fun youtubeHdr(format: JSONObject): Boolean {
     return transfer.contains("SMPTEST2084") || transfer.contains("ARIB_STD_B67") ||
         format.optString("qualityLabel").contains("HDR", ignoreCase = true)
 }
+
+internal fun youtubeTrackId(stream: YoutubeStream): String = if(stream.video)
+    "yt:v:${stream.formatId}:${stream.width}:${stream.height}:${stream.fps}:${stream.hdr}:${codecLabel(stream.mime)}:${stream.audio}"
+else "yt:a:${stream.formatId}:${stream.language}:${stream.channels}:${stream.audioCodec}:${stream.bitrate / 1000}"
+internal fun youtubeSpecifications(streams: List<YoutubeStream>, selected: Pair<YoutubeStream,YoutubeStream?>): MediaSpecifications =
+    MediaSpecifications(streams.filter { it.video }.sortedWith(youtubeVideoOrder.reversed()).distinctBy(::youtubeTrackId).map {
+        TrackOption(youtubeTrackId(it),videoSpecification(resolutionLabel(it.width,it.height),it.fps),
+            listOf(codecLabel(it.mime),if(it.hdr) "HDR" else "",bitrateLabel(it.bitrate),if(it.audio) "自带音轨" else "无音轨").filter(String::isNotBlank).joinToString(" · "),it.audio)
+    },streams.filter { it.audio && !it.video }.sortedWith(youtubeAudioOrder.reversed()).distinctBy(::youtubeTrackId).map {
+        TrackOption(youtubeTrackId(it),listOf(codecLabel(it.mime),bitrateLabel(it.bitrate)).filter(String::isNotBlank).joinToString(" · "),
+            listOf(youtubeLanguageLabel(it.language),if(it.original) "原声" else "",if(it.channels > 0) "${it.channels} 声道" else "").filter(String::isNotBlank).joinToString(" · "))
+    },TrackSelection(youtubeTrackId(selected.first),selected.second?.let(::youtubeTrackId)))
+
+internal fun youtubeLanguageLabel(value: String): String = value.substringBefore('.').takeIf(String::isNotBlank)?.let {
+    java.util.Locale.forLanguageTag(it).getDisplayName(java.util.Locale.SIMPLIFIED_CHINESE).ifBlank { it }
+}.orEmpty()

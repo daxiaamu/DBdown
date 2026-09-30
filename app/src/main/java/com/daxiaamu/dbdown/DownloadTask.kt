@@ -16,7 +16,7 @@ data class DownloadTask(
     val status: TaskStatus = TaskStatus.QUEUED, val bytes: Long = 0, val total: Long = -1,
     val speed: Long = 0, val quality: String = "", val uri: String = "", val error: String = "",
     val created: Long = System.currentTimeMillis(), val albumMode: AlbumMode = AlbumMode.IMAGES,
-    val outputUris: List<String> = emptyList(), val mimeType: String = "video/mp4", val resolution: String = ""
+    val outputUris: List<String> = emptyList(), val mimeType: String = "video/mp4", val resolution: String = "", val fps: Float = 0f, val selection: TrackSelection? = null
 ) {
     val progress: Float get() = if(total > 0) (bytes.toDouble()/total).toFloat().coerceIn(0f, 1f) else 0f
 }

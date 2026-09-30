@@ -13,6 +13,10 @@ import java.util.Properties
 internal class ResumableTransfer(private val client: OkHttpClient, private val trackCall: (Call) -> Unit) {
     suspend fun download(url: String, file: File, mediaKey: String, userAgent: String, referer: String,
                          progress: (bytes: Long, total: Long, speed: Long) -> Unit) {
+        retryMediaTransfer { downloadOnce(url, file, mediaKey, userAgent, referer, progress) }
+    }
+    private suspend fun downloadOnce(url: String, file: File, mediaKey: String, userAgent: String, referer: String,
+                                    progress: (Long, Long, Long) -> Unit) {
         val context = currentCoroutineContext()
         context.ensureActive()
         val metadataFile = File(file.path + ".resume")

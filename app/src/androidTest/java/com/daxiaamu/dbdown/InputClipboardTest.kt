@@ -11,13 +11,15 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
-import java.io.File
+import android.app.NotificationManager
+import org.junit.Assume.assumeTrue
 
 @RunWith(AndroidJUnit4::class)
 class InputClipboardTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val vm get() = ViewModelProvider(rule.activity)[MainViewModel::class.java]
     private val clipboard get() = rule.activity.getSystemService(ClipboardManager::class.java)
+    private fun notification() = rule.activity.getSystemService(NotificationManager::class.java).activeNotifications.firstOrNull { it.id == ClipboardLivePrompt.NOTIFICATION_ID }?.notification
     @Test fun focusSuggestsFillWithoutOverwritingAndClearRemovesEverything() {
         val original = clipboard.primaryClip
         var enabled = true
@@ -29,14 +31,12 @@ class InputClipboardTest {
                 vm.openInput("尚未提交的输入")
                 clipboard.setPrimaryClip(ClipData.newPlainText("test", text))
             }
-            rule.waitUntil(10000) { rule.onAllNodesWithTag("inputClipboardHeadsUp").fetchSemanticsNodes().isNotEmpty() }
+            rule.onNodeWithTag("fillClipboardLink").assertIsDisplayed().assertTextEquals("填入")
             rule.runOnIdle { assertEquals("尚未提交的输入", vm.input) }
-            val screenshot = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
-            File(rule.activity.getExternalFilesDir(null), "input-headsup.png").outputStream().use {
-                screenshot.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-            }
-            screenshot.recycle()
-            rule.onNodeWithText("填入").performClick()
+            rule.onNodeWithTag("inputClipboardHeadsUp").assertDoesNotExist()
+            assertNull(notification())
+            rule.onNodeWithTag("fillClipboardLink").performClick()
+            rule.waitUntil(5000) { vm.input == text }
             rule.onNodeWithTag("downloadLinkInput").assertTextEquals(text)
             rule.onNodeWithContentDescription("清空输入").assertIsDisplayed().performClick()
             rule.runOnIdle { assertEquals("", vm.input); assertNull(vm.error) }
@@ -66,7 +66,7 @@ class InputClipboardTest {
                 rule.runOnIdle { vm.setClipboard(true); vm.openInput(); clipboard.setPrimaryClip(clip) }
                 rule.waitForIdle()
                 rule.onNodeWithTag("downloadLinkInput").assertIsFocused()
-                rule.onNodeWithTag("inputClipboardHeadsUp").assertDoesNotExist()
+                assertNull(notification())
                 rule.runOnIdle { vm.inputVisible = false }
                 rule.waitForIdle()
             }
@@ -85,7 +85,6 @@ class InputClipboardTest {
         var enabled = true
         try {
             rule.runOnIdle { enabled = vm.clipboardEnabled; vm.setClipboard(false); vm.openInput("https://v.douyin.com/QbQGcMP060w/") }
-            rule.onNodeWithText("视频", useUnmergedTree = true).performScrollTo().performClick()
             rule.onNode(hasText("下载") and hasClickAction() and hasAnyAncestor(isDialog())).assertIsDisplayed()
             rule.onNodeWithContentDescription("清空输入").assertIsDisplayed()
         } finally { rule.runOnIdle { vm.inputVisible = false; vm.setClipboard(enabled) } }

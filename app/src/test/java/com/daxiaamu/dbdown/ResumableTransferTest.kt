@@ -88,4 +88,20 @@ class ResumableTransferTest {
             assertArrayEquals(data, file.readBytes())
         }
     }
+    @Test fun readTimeoutReconnectsFromValidatedPartialBytes() = runBlocking {
+        MockWebServer().use { server ->
+            val data = ByteArray(8192) { (it % 251).toByte() }
+            val url = server.url("/video").toString(); val file = temp.newFile()
+            server.enqueue(MockResponse().setHeader("ETag", "\"v1\"")
+                .setBody(Buffer().write(data)).throttleBody(4096, 1, TimeUnit.SECONDS))
+            server.enqueue(MockResponse().setResponseCode(206).setHeader("ETag", "\"v1\"")
+                .setHeader("Content-Range", "bytes 4096-8191/8192")
+                .setBody(Buffer().write(data,4096,4096)))
+            val slow = client.newBuilder().readTimeout(200,TimeUnit.MILLISECONDS).build()
+            ResumableTransfer(slow) {}.download(url,file,"video","test",url) { _,_,_ -> }
+            assertArrayEquals(data,file.readBytes())
+            assertNull(server.takeRequest().getHeader("Range"))
+            assertEquals("bytes=4096-",server.takeRequest().getHeader("Range"))
+        }
+    }
 }

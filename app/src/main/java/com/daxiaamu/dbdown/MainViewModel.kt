@@ -6,7 +6,6 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -68,51 +67,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             finally { deleting = false }
         }
     }
+    internal val specificationEditor by lazy { SpecificationEditor(context,viewModelScope) { task ->
+        revealTaskId=task.id; tab=1; settings=false; start(task.id)
+    } }
     var settings by mutableStateOf(false)
     var inputVisible by mutableStateOf(false)
     var input by mutableStateOf("")
     var error by mutableStateOf<String?>(null)
     var notice by mutableStateOf<String?>(null)
-    var clipboardSuggestion by mutableStateOf<VideoInfo?>(null)
-    private var clipboardJob: Job? = null
-    private var currentClipboard: String? = null
+    internal val clipboard = ClipboardSuggestions(viewModelScope, { VideoResolver().resolve(it) }, gate::shouldShow, ::rememberHandled)
+    internal val clipboardPrompt get() = clipboard.state
 
     fun setClipboard(enabled: Boolean) {
         clipboardEnabled = enabled
         prefs.edit().putBoolean("clipboard", enabled).apply()
-        if(!enabled) { clipboardJob?.cancel(); clipboardSuggestion = null; currentClipboard = null }
+        if(!enabled) clipboard.clear()
     }
-    fun inspectClipboard(text: String?) {
-        if(!clipboardEnabled || inputVisible) return
-        val link = text?.let(Links::detect)
-        if(link == null) {
-            clipboardJob?.cancel(); clipboardSuggestion = null
-            currentClipboard = null
-            return
-        }
-        if(link.key == currentClipboard) return
-        currentClipboard = link.key
-        clipboardJob?.cancel()
-        clipboardSuggestion = null
-        if(!gate.shouldShow(link.key)) return
-        clipboardJob = viewModelScope.launch {
-            try {
-                val info = VideoResolver().resolve(link)
-                if(!clipboardEnabled || inputVisible || currentClipboard != link.key) return@launch
-                if(!gate.shouldShow(info.id)) return@launch
-                clipboardSuggestion = info
-                rememberHandled(link.key); rememberHandled(info.id)
-            } catch(e: CancellationException) { throw e }
-            catch(_: Exception) { currentClipboard = null /* Retry next foreground transition; never prompt for unverifiable content. */ }
-        }
+    internal fun inspectClipboard(content: ClipboardContent?) {
+        if(clipboardEnabled && !inputVisible) clipboard.inspect(content?.text, content?.timestamp ?: 0)
     }
+    fun dismissClipboard() = clipboard.dismiss()
+    fun retryClipboard() = clipboard.retry()
     private fun rememberHandled(key: String) {
         gate.handled(key)
         prefs.edit().putStringSet("handled", gate.keys()).apply()
     }
     fun openInput(text: String = "") {
-        clipboardJob?.cancel()
-        clipboardSuggestion = null
+        clipboard.clear()
         input = text.take(16000); error = null; inputVisible = true
     }
     fun onShare(text: String) {
@@ -129,10 +110,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
     fun downloadSuggestion(): Boolean {
-        val info = clipboardSuggestion ?: return false
-        clipboardSuggestion = null
-        val task = enqueue(info.source, info)
-        tab = 1; settings = false
+        val info=(clipboardPrompt as? ClipboardPrompt.Ready)?.info ?: return false
+        clipboard.clear()
+        val task=enqueue(info.source,info)
+        tab=1; settings=false
         return start(task.id)
     }
     private fun enqueue(link: VideoLink, info: VideoInfo? = null): DownloadTask {
@@ -141,7 +122,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             it.copy(title = info.title, quality = info.quality, resolution = info.resolution)
         }
         revealTaskId = task.id
-        rememberHandled(link.key)
         return task
     }
     private fun start(id: String): Boolean = try {

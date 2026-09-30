@@ -50,4 +50,22 @@ class LosslessMuxerTest {
             assertEquals(hashes(before), hashes(after))
         } finally { dir.deleteRecursively() }
     }
+    @Test fun explicitlySilentVideoRemuxesWithoutAddingAudio() = runBlocking {
+        val dir=File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir,"silent-test-${System.nanoTime()}")
+        check(dir.mkdirs())
+        try {
+            val input=File(dir,"silent.mkv")
+            val output=File(dir,"silent.mp4")
+            val created=FFmpegKit.executeWithArguments(arrayOf("-y","-v","error","-f","lavfi",
+                "-i","color=c=blue:s=160x90:r=10","-t","1","-an","-c:v","mpeg4",input.path))
+            assertTrue(created.output,ReturnCode.isSuccess(created.returnCode))
+            LosslessMuxer.remux(input,output,requireAudio=false)
+            val result=FFprobeKit.executeWithArguments(arrayOf("-v","error","-show_streams","-of","json",output.path))
+            assertTrue(ReturnCode.isSuccess(result.returnCode))
+            val tracks=JSONObject(result.output).getJSONArray("streams")
+            assertEquals(1,tracks.length())
+            assertEquals("video",tracks.getJSONObject(0).getString("codec_type"))
+        } finally { dir.deleteRecursively() }
+    }
+
 }

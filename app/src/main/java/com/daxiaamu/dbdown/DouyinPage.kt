@@ -14,15 +14,19 @@ internal object DouyinPage {
             JSONObject().put("videoInfoRes", JSONObject().put("item_list", items))))
         return parse("<script>window._ROUTER_DATA=$router</script>", link).copy(separateAlbumMusic = true)
     }
-    private data class VideoVariant(val pixels: Long, val bitrate: Long, val addresses: List<String>)
+    private data class VideoVariant(val width: Int, val height: Int, val bitrate: Long, val addresses: List<String>, val fps: Float = 0f, val codec: String = "") {
+        val pixels get() = width.toLong() * height
+        fun track() = DirectVideoTrack("dy:$width:$height:$fps:$codec:$bitrate",width,height,fps,codec,bitrate,addresses)
+    }
     private val qualityOrder = compareByDescending<VideoVariant> { it.pixels }.thenByDescending { it.bitrate }
 
     private fun mobileVariants(video: JSONObject): List<VideoVariant> {
         val rates = video.optJSONArray("bit_rate")
         return (0 until (rates?.length() ?: 0)).mapNotNull { rates!!.optJSONObject(it) }.map { rate ->
             val stream = rate.optJSONObject("play_addr")
-            VideoVariant((stream?.optLong("width") ?: 0) * (stream?.optLong("height") ?: 0),
-                rate.optLong("bit_rate"), urls(stream?.optJSONArray("url_list")).map { it.replace("/playwm/", "/play/") })
+            VideoVariant(stream?.optInt("width") ?: 0, stream?.optInt("height") ?: 0,
+                rate.optLong("bit_rate"), urls(stream?.optJSONArray("url_list")).map { it.replace("/playwm/", "/play/") },
+                frameRate(rate.optString("FPS").ifBlank { rate.optString("fps") }),rate.optString("codec_type").ifBlank { if(rate.optInt("is_h265") == 1) "hevc" else "" })
         }
     }
 
@@ -37,7 +41,8 @@ internal object DouyinPage {
         val rates = video.optJSONArray("bitRateList")
         val variants = (0 until (rates?.length() ?: 0)).map { rates!!.getJSONObject(it) }
             .filter { it.optString("format").let { format -> format.isBlank() || format == "mp4" } }
-            .map { VideoVariant(it.optLong("width") * it.optLong("height"), it.optLong("bitRate"), addresses(it.optJSONArray("playAddr"))) }
+            .map { VideoVariant(it.optInt("width"), it.optInt("height"), it.optLong("bitRate"), addresses(it.optJSONArray("playAddr")),
+                frameRate(it.optString("fps").ifBlank { it.optString("FPS") }),it.optString("codecType")) }
         return variants to addresses(video.optJSONArray("playAddr"))
     }
 
@@ -55,7 +60,7 @@ internal object DouyinPage {
         val mobile = mobileVariants(shareItem(page, info.source).getJSONObject("video"))
         val candidates = ((mobile + web).sortedWith(qualityOrder).flatMap { it.addresses } +
             listOf(info.video) + info.videoFallbacks + fallback).distinct()
-        return info.copy(video = candidates.first(), videoFallbacks = candidates.drop(1))
+        return catalog(info.copy(video = candidates.first(), videoFallbacks = candidates.drop(1)), mobile + web)
     }
 
     fun needsDesktopLive(raw: String, link: VideoLink): Boolean {
@@ -168,9 +173,28 @@ internal object DouyinPage {
         val video = item.optJSONObject("video")!!
         val ranked = mobileVariants(video).sortedWith(qualityOrder).flatMap { it.addresses }
         val candidates = (ranked + highQuality + alternates + originals).distinct()
-        return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "自动画质",
-            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1))
+        return catalog(VideoInfo(link, "dy:$id", title, candidates.first(), quality = "自动画质",
+            referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1)), mobileVariants(video))
     }
+    private fun catalog(info: VideoInfo, variants: List<VideoVariant>): VideoInfo {
+        val tracks = variants.filter { it.addresses.isNotEmpty() }.sortedWith(qualityOrder).map { it.track() }
+            .groupBy { it.id }.map { (_, copies) -> copies.first().copy(urls=copies.flatMap { it.urls }.distinct()) }
+            .ifEmpty { listOf(DirectVideoTrack("dy:original",0,0,0f,"",0,listOf(info.video)+info.videoFallbacks)) }
+        val selected = tracks.firstOrNull { info.video in it.urls } ?: tracks.first()
+        return info.copy(fps=selected.fps,directVideoTracks=tracks,specifications=MediaSpecifications(tracks.map {
+            TrackOption(it.id,videoSpecification(resolutionLabel(it.width,it.height),it.fps),
+                listOf(codecLabel(it.codec),bitrateLabel(it.bitrate),"自带音轨").filter(String::isNotBlank).joinToString(" · "),true)
+        },emptyList(),TrackSelection(selected.id)))
+    }
+    fun selectSpecification(info: VideoInfo, requested: TrackSelection?): VideoInfo {
+        if(requested == null) return info
+        check(requested.audio == null) { "该视频不提供独立音轨" }
+        val track = info.directVideoTracks.find { it.id == requested.video } ?: error("所选规格已不可用，请重新选择")
+        return info.copy(video=track.urls.first(),videoFallbacks=track.urls.drop(1),fps=track.fps,
+            quality="${track.height}P",resolution=resolutionLabel(track.width,track.height),
+            specifications=info.specifications?.copy(selected=requested))
+    }
+
     internal fun bestImageUrl(image: JSONObject): String? {
         val candidates = urls(image.optJSONArray("url_list")).toMutableList()
         // Live cover addresses can point to the same original image, without the q75 display transform.
