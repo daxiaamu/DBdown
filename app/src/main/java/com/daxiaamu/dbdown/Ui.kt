@@ -237,8 +237,8 @@ private val paths = mapOf(
                                     Glyph(if(paused) "play" else "pause", if(paused) "全部开始" else "全部暂停")
                                 }
                             }
-                            IconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
-                                enabled = !vm.deleting && tasks.isNotEmpty(), modifier = Modifier.testTag("clearDownloads")) {
+                            if(tasks.isNotEmpty()) IconButton(onClick = { vm.requestDelete(tasks.map { it.id }, all = true) },
+                                enabled = !vm.deleting, modifier = Modifier.testTag("clearDownloads")) {
                                 Glyph("trash", "清空下载记录")
                             }
                         }

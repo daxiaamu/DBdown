@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 11,
+  "policyRevision": 12,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.16-beta.1: video and audio selection, clipboard parsing feedback and download retries"
+  "reason": "Publish 0.6.16-beta.2: hide clear action when the download list is empty"
 }
