@@ -61,3 +61,23 @@ QHBruxEyow0 的桌面 Chrome 画质菜单确实列出 4320p60（8K），播放�
 NPBiLXkhzFo 的此次桌面播放器响应最高为 3840×2160 / 60fps，包含 VP9 Profile 2 和 AV1 HDR；视频时长元数据为 610 秒。8T 选择 4K60 HDR HLS 与 Opus，完整下载验证在音频传输阶段发生网络读取超时，不能记为全片合并成功。
 
 QHBruxEyow0 的同一应用解析器复核实际选择 3840×2160 / 60fps（本次 SDR）和 Opus，视频、音频均返回 HTTP 206。网页的 8K60 SABR 资源尚未实现下载；本轮不宣称 8K 或该视频真机全片下载通过。
+
+## 屏幕与设备能力对照（2026-09-30）
+
+研究资料：
+
+- [YouTube 官方画质说明](https://support.google.com/youtube/answer/91449?hl=en)：屏幕/播放器大小、浏览器与编解码支持会影响播放画质。
+- [Chromium Media Capabilities 发布讨论](https://groups.google.com/a/chromium.org/g/blink-dev/c/aXYvQ01tMhw/m/SqA09gD7AgAJ)：YouTube 曾用解码能力预测限制自动码率选择的分辨率上限。这是自动播放决策的证据，不等于服务器不返回更高清资源。
+- [yt-dlp 客户端配置](https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py)：iOS 设备型号会影响 60fps 格式；项目已有相同 iPhone16,2 和 RealityDevice17,1 请求信息。
+
+对 QHBruxEyow0 使用独立 Chrome 153 测试会话：
+
+| 屏幕/视口 | AV1 能力 | 播放器可选最高画质 | 原始响应 |
+| --- | --- | --- | --- |
+| 1280×720 | 原生支持 | 8K60（highres） | itag 571，7680×4320 / 60fps |
+| 3840×2160 | 原生支持 | 8K60（highres） | 同上 |
+| 3840×2160 | 测试脚本让 MediaSource、canPlayType 和 MediaCapabilities 报告不支持 AV1 | 4K60 | 仍包含相同 8K60 条目 |
+
+三组响应均为 SABR，8K 条目均无 url 或 signatureCipher。这个样例的可见 8K 门槛来自客户端编解码能力，不是必须具备 8K 屏幕；不推广为所有视频或设备的结论。另行直接修改 screenWidthPoints/screenHeightPoints 的 API 请求均得到 UNPLAYABLE，不能据此证明这些字段能或不能提高可下载档位。
+
+当前下载器直接比较原始格式，不调用手机屏幕尺寸或本机解码能力来限制下载清晰度；保存与无损合并也不要求手机能实时播放该分辨率。因此没有加入未经验证的虚拟屏幕、GPU 型号或性能数值。新增实际 itag 571 AV1 格式的回归：存在可用普通地址时优先选择 8K；只有 SABR 格式描述时不虚报已经取得 8K 下载地址。测试使用合成地址，不代表本次已下载真实 8K。

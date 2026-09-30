@@ -76,3 +76,25 @@ internal fun youtubeSelectStreams(streams: List<YoutubeStream>, prepare: (Youtub
         .firstNotNullOfOrNull(prepare) ?: return null
     return video to audio
 }
+
+/** The final selected tracks alone determine display metadata and the transfer plan. */
+internal fun youtubeVideoInfo(link: VideoLink, title: String, selection: Pair<YoutubeStream,YoutubeStream?>): VideoInfo {
+    val (video,audio) = selection
+    return VideoInfo(link,link.key,title,video.url,audio=audio?.url,audioCodec=audio?.audioCodec.orEmpty(),
+        quality="${video.height}p${if(video.fps>30) video.fps.toInt() else ""}${if(video.hdr) " HDR" else ""}",
+        referer=link.url,userAgent=video.userAgent,resolution=resolutionLabel(video.width,video.height),
+        videoPlan=video.plan,audioPlan=audio?.plan,audioUserAgent=audio?.userAgent)
+}
+
+internal fun youtubeAudioCodec(mime: String): String = when {
+    mime.contains("opus") -> "opus"
+    mime.contains("ec-3") -> "eac3"
+    mime.contains("ac-3") -> "ac3"
+    else -> "aac"
+}
+
+internal fun youtubeHdr(format: JSONObject): Boolean {
+    val transfer = format.optJSONObject("colorInfo")?.optString("transferCharacteristics").orEmpty()
+    return transfer.contains("SMPTEST2084") || transfer.contains("ARIB_STD_B67") ||
+        format.optString("qualityLabel").contains("HDR", ignoreCase = true)
+}

@@ -42,7 +42,7 @@ class DeleteActionsTest {
             originalPaused = vm.store.paused.value
             vm.store.pauseAll(); vm.settings = false; vm.tab = 1
             repeat(2) { index ->
-                val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=${7200+index}")!!)!!
+                val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=${7200+index}")!!)
                 ids += task.id
                 val files = if(index == 0) uris.take(2) else listOf(uris.last())
                 vm.store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = files.first().toString(), outputUris = files.map(Uri::toString), mimeType = "image/*", title = "Delete test fixture") }
@@ -84,8 +84,8 @@ class DeleteActionsTest {
         val name = "delete-tests-${System.nanoTime()}"
         val store = DownloadStore(rule.activity, name)
         try {
-            val pending = store.add(Links.detect("BV1xx411c7mD")!!)!!
-            val failed = store.add(Links.detect("av170001")!!)!!
+            val pending = store.add(Links.detect("BV1xx411c7mD")!!)
+            val failed = store.add(Links.detect("av170001")!!)
             store.update(failed.id) { it.copy(status = TaskStatus.COMPLETED, uri = "content://test/denied") }
             var stopped = false
             val result = deleteDownloadTasks(store, listOf(pending.id, failed.id), true, stop = { ids ->

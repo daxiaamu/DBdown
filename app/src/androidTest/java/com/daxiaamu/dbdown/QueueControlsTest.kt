@@ -15,21 +15,21 @@ class QueueControlsTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val vm get() = ViewModelProvider(rule.activity)[MainViewModel::class.java]
 
-    @Test fun pausedQueueAndParallelismPersistWithNewTasksAndDeduplication() {
+    @Test fun pausedQueueAndParallelismPersistWithIndependentDuplicateTasks() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val name = "queue-test-${System.nanoTime()}"
         try {
             val store = DownloadStore(context, name)
             assertEquals(3, store.parallelism.value)
             val link = Links.detect("BV1xx411c7mD")!!
-            val task = store.add(link)!!
+            val task = store.add(link)
             store.update(task.id) { it.copy(status = TaskStatus.DOWNLOADING, bytes = 1234, total = 5000, speed = 600) }
             store.setParallelism(5); store.pauseAll()
             assertEquals(TaskStatus.PAUSED, store.get(task.id)!!.status)
             assertEquals(0L, store.get(task.id)!!.speed)
             assertEquals(1234L, store.get(task.id)!!.bytes)
-            assertNull(store.add(link))
-            val added = store.add(Links.detect("https://www.douyin.com/video/7679018882060990022")!!)!!
+            assertNotEquals(task.id, store.add(link).id)
+            val added = store.add(Links.detect("https://www.douyin.com/video/7679018882060990022")!!)
             assertEquals(TaskStatus.PAUSED, added.status)
             val restored = DownloadStore(context, name)
             assertTrue(restored.paused.value); assertEquals(5, restored.parallelism.value)
@@ -55,7 +55,7 @@ class QueueControlsTest {
             check(vm.store.tasks.value.none { it.status.active }) { "Do not interrupt user downloads in this UI test" }
             vm.tab = 1
             // Queue a unique record without initiating network traffic.
-            val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=9876")!!)!!
+            val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=9876")!!)
             id = task.id
         }
         try {
@@ -96,7 +96,7 @@ class QueueControlsTest {
             wasPaused = vm.store.paused.value
             vm.store.pauseAll()
             repeat(16) { index ->
-                val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=${8000+index}")!!)!!
+                val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=${8000+index}")!!)
                 ids += task.id
                 vm.store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, title = "scroll fixture $index") }
             }

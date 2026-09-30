@@ -100,7 +100,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val info = VideoResolver().resolve(link)
                 if(!clipboardEnabled || inputVisible || currentClipboard != link.key) return@launch
                 if(!gate.shouldShow(info.id)) return@launch
-                if(store.tasks.value.any { it.key == info.id && (it.status.pending || it.status == TaskStatus.COMPLETED) }) return@launch
                 clipboardSuggestion = info
                 rememberHandled(link.key); rememberHandled(info.id)
             } catch(e: CancellationException) { throw e }
@@ -124,23 +123,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun submit(): Boolean {
         val link = Links.detect(input)
         if(link == null) { error = "请粘贴 B 站、抖音或 YouTube 链接，也支持分享文案、BV / AV 号和 YouTube 视频 ID"; return false }
-        val task = store.add(link, AlbumMode.IMAGES)
-        if(task == null) { error = "这个作品已经在下载列表中"; return false }
-        revealTaskId = task.id
-        rememberHandled(link.key)
+        val task = enqueue(link)
         if(!start(task.id)) { error = store.get(task.id)?.error; return false }
         inputVisible = false; tab = 1; settings = false
         return true
     }
     fun downloadSuggestion(): Boolean {
         val info = clipboardSuggestion ?: return false
-        val task = store.add(info.source, AlbumMode.IMAGES)
         clipboardSuggestion = null
-        if(task == null) { notice = "这个作品已经在下载列表中"; return false }
-        revealTaskId = task.id
-        store.update(task.id) { it.copy(title = info.title, quality = info.quality, resolution = info.resolution) }
+        val task = enqueue(info.source, info)
         tab = 1; settings = false
         return start(task.id)
+    }
+    private fun enqueue(link: VideoLink, info: VideoInfo? = null): DownloadTask {
+        val task = store.add(link)
+        if(info != null) store.update(task.id) {
+            it.copy(title = info.title, quality = info.quality, resolution = info.resolution)
+        }
+        revealTaskId = task.id
+        rememberHandled(link.key)
+        return task
     }
     private fun start(id: String): Boolean = try {
         if(!store.paused.value) DownloadService.start(context)
@@ -151,13 +153,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun retry(id: String) {
         if(deleting) return
-        val task = store.get(id) ?: return
-        if(task.status.pending) return
-        if(store.tasks.value.any { it.id != id && it.key == task.key && it.albumMode == task.albumMode && (it.status.pending || it.status == TaskStatus.COMPLETED) }) {
-            notice = "这个作品已经在下载列表中"; return
-        }
-        store.update(id) { it.copy(status = if(store.paused.value) TaskStatus.PAUSED else TaskStatus.QUEUED, error = "", bytes = 0, total = -1, speed = 0) }
-        start(id)
+        if(store.retry(id)) start(id)
     }
     fun pauseDownloads() {
         runCatching { DownloadService.pause(context) }.onFailure { notice = "无法暂停下载，请重试" }

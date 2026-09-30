@@ -105,7 +105,9 @@ APK：app/build/outputs/apk/debug/app-debug.apk
 - MainActivity / MainViewModel：生命周期剪贴板、分享入口、设置及下载交互。
 - Ui.kt：Compose 界面与主题。
 - ClipboardLivePrompt.kt：系统实时提示、一次性操作、超时回收与前台避让。
-- DownloadStore.kt：本地下载记录和可观察状态。
+- DownloadTask.kt / DownloadStore.kt：任务模型、持久化和状态变更。任务 UUID 是唯一身份，同一作品可以创建多个独立任务。
+- YoutubeExtractorStreams.kt / YoutubeStreams.kt：不同来源统一转换为资源模型，复用同一套选流和下载计划生成逻辑。
+- YoutubeUrls.kt：视频与清单地址的签名处理。
 - DownloadService.kt：持久通知、队列、音视频下载合并、系统相册发布及中断处理。
 
 ## 参考
@@ -124,13 +126,13 @@ APK：app/build/outputs/apk/debug/app-debug.apk
 
 ## 自动画质选择
 
-抖音分享页的素材尺寸不等于下载流尺寸。存在多码率列表时，优先选择较高分辨率和码率；只有分享播放入口时优先请求 1080P，并保留原入口降级。实际可获取的画质由平台返回决定，不把请求参数当成已获取的分辨率。下载期间从本地 MP4 视频头读取尺寸，完成时再次读取文件元数据；未确认前不显示原素材尺寸。
+抖音分享页的素材尺寸不等于下载流尺寸。合并比较分享页和官方桌面页的多码率列表，优先选择较高分辨率和码率；桌面页超时或不可用时保留分享页资源。只有分享播放入口时优先请求 1080P，并保留原入口降级。实际可获取的画质由平台返回决定，不把请求参数当成已获取的分辨率。下载期间从本地 MP4 视频头读取尺寸，完成时再次读取文件元数据；未确认前不显示原素材尺寸。
 
 参考核对：[DouyinDL 解析器](https://github.com/noctiro/DouyinDL/blob/main/app/src/main/java/com/noctiro/douyindl/data/DouyinParser.kt) 直接使用分享页第一条播放链接；[BiliDownload 视频仓库](https://github.com/KafuuNeko/BiliDownload/blob/master/app/src/main/java/cc/kafuu/bilidownload/common/network/repository/BiliVideoRepository.kt) 请求 DASH 资源列表。DBDown 在此基础上独立实现排序与实际文件尺寸校验。登录和会员权限仍由各平台决定，不设置跨平台通用的“无会员最高 1080P”规则。
 
 ## YouTube
 
-支持普通视频、Shorts、youtu.be 分享链接和完整的 11 位视频 ID。自动选择可获取的最高 AVC / HEVC MP4 画质，并合并 AAC 音轨；需要能够访问 YouTube 的网络。支持在设置中通过 Google 官方网页登录 YouTube，优先使用账号可获取的网页资源；平台验证、会员及地区限制仍以网站为准。当前不支持直播。
+支持普通视频、Shorts、youtu.be 分享链接和完整的 11 位视频 ID。自动选择可获取的高分辨率 AVC / HEVC / VP9 / AV1 资源，并原样合并独立音轨，支持 AAC / Opus 等编码及静态 DASH、连续 HLS 点播；需要能够访问 YouTube 的网络。支持在设置中通过 Google 官方网页登录 YouTube，优先使用账号可获取的网页资源；平台验证、会员及地区限制仍以网站为准。当前不支持直播。详细格式和验证记录见 [YouTube 支持说明](docs/YOUTUBE.md)。
 
 ## 许可
 

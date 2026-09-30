@@ -29,12 +29,12 @@ class YoutubeAccountTest {
             .put("width", 1920).put("height", 1080).put("url", "https://r1.googlevideo.com/combined")
         fun audio(rate: Int, default: Boolean) = JSONObject().put("mimeType", "audio/mp4; codecs=\"mp4a.40.2\"")
             .put("bitrate", rate).put("url", "https://r1.googlevideo.com/audio$rate")
-            .put("audioTrack", JSONObject().put("audioIsDefault", default))
+            .put("audioTrack", JSONObject().put("audioIsDefault", default).put("id", if(default) "en" else "es"))
         val player = JSONObject().put("playabilityStatus", JSONObject().put("status", "OK"))
             .put("videoDetails", JSONObject().put("videoId", "BLKegH19KGI").put("title", "Test"))
             .put("streamingData", JSONObject().put("formats", JSONArray().put(video))
                 .put("adaptiveFormats", JSONArray().put(audio(128000, true)).put(audio(256000, true)).put(audio(384000, false))))
-        val info = youtubeWebVideo("var ytInitialPlayerResponse = $player;", Links.detect("BLKegH19KGI")!!) { _, url -> url }!!
+        val info = selectYoutubePageFixture("var ytInitialPlayerResponse = $player;", Links.detect("BLKegH19KGI")!!)!!
         assertEquals("https://r1.googlevideo.com/audio256000", info.audio)
         assertEquals("https://r1.googlevideo.com/combined", info.video)
     }
@@ -46,14 +46,14 @@ class YoutubeAccountTest {
         fun audio(codec: String, rate: Int, default: Boolean) = JSONObject()
             .put("mimeType", if(codec == "opus") "audio/webm; codecs=\"opus\"" else "audio/mp4; codecs=\"mp4a.40.2\"")
             .put("bitrate", rate).put("url", "https://r1.googlevideo.com/audio$rate")
-            .put("audioTrack", JSONObject().put("audioIsDefault", default))
+            .put("audioTrack", JSONObject().put("audioIsDefault", default).put("id", if(default) "en" else "es"))
         for(codec in listOf("vp9", "av01.0.12M.08")) {
             val player = JSONObject().put("playabilityStatus", JSONObject().put("status", "OK"))
                 .put("videoDetails", JSONObject().put("videoId", "b-Ag7meqZoU").put("title", "4K"))
                 .put("streamingData", JSONObject().put("adaptiveFormats", JSONArray()
                     .put(video("avc1", 1920, 1080)).put(video(codec, 3840, 2160)).put(video(codec, 7680, 4320, true))
                     .put(audio("aac", 128000, true)).put(audio("opus", 160000, true)).put(audio("opus", 256000, false))))
-            val info = youtubeWebVideo("var ytInitialPlayerResponse = $player;", Links.detect("b-Ag7meqZoU")!!) { _, url -> url }!!
+            val info = selectYoutubePageFixture("var ytInitialPlayerResponse = $player;", Links.detect("b-Ag7meqZoU")!!)!!
             assertEquals("https://r1.googlevideo.com/video3840", info.video)
             assertEquals("https://r1.googlevideo.com/audio160000", info.audio)
             assertEquals("opus", info.audioCodec)
@@ -69,11 +69,11 @@ class YoutubeAccountTest {
             .put("streamingData",JSONObject().put("adaptiveFormats",JSONArray().put(video).put(audio)))
         val link=Links.detect("BLKegH19KGI")!!
         val page="var ytInitialPlayerResponse = $player; next();"
-        val info=youtubeWebVideo(page,link) { _, url -> url }!!
+        val info=selectYoutubePageFixture(page,link)!!
         assertEquals("1920 × 1080",info.resolution)
         assertEquals("https://r1.googlevideo.com/audio",info.audio)
         assertEquals(link.key,info.id)
-        assertTrue(runCatching { youtubeWebVideo(page,Links.detect("qIzGvexMjpA")!!) { _,url -> url } }.isFailure)
-        assertNull(youtubeWebVideo("<html>verification required</html>",link))
+        assertNull(selectYoutubePageFixture(page,Links.detect("qIzGvexMjpA")!!))
+        assertNull(selectYoutubePageFixture("<html>verification required</html>",link))
     }
 }

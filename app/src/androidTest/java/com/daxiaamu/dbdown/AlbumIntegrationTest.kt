@@ -11,10 +11,10 @@ class AlbumIntegrationTest {
         try {
             val store = DownloadStore(context, name)
             val link = Links.detect("https://www.douyin.com/note/7689856421856364997")!!
-            val task = store.add(link, AlbumMode.VIDEO)!!
+            val task = store.add(link, AlbumMode.VIDEO)
             val info = VideoInfo(link, link.key, "Original album", "", referer = "", userAgent = "",
                 images = listOf("https://example.com/original.webp"), music = "https://example.com/music.mp3")
-            assertTrue(store.claim(task.id, info))
+            assertTrue(store.markResolved(task.id, info))
             assertEquals(AlbumMode.IMAGES, store.get(task.id)!!.albumMode)
             assertTrue(store.get(task.id)!!.quality.contains("图片和配乐"))
             assertEquals(AlbumMode.IMAGES, DownloadStore(context, name).get(task.id)!!.albumMode)

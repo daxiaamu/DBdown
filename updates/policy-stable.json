@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 12,
+  "policyRevision": 13,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.14: foreground clipboard detection across screens"
+  "reason": "Publish 0.6.15: independent downloads, highest available media and original albums"
 }

@@ -63,7 +63,7 @@ class AlbumMusicProbeTest {
                 scenario.onActivity {
                     store.resumeAll()
                     val existing = store.tasks.value.firstOrNull { it.key == link.key }
-                    id = existing?.id ?: store.add(link)!!.id
+                    id = existing?.id ?: store.add(link).id
                     if(existing == null || existing.status != TaskStatus.COMPLETED) DownloadService.start(context)
                 }
                 val deadline = System.currentTimeMillis() + 120_000

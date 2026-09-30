@@ -46,7 +46,7 @@ class LivePhotoProbeTest {
                 scenario.onActivity {
                     store.resumeAll()
                     val existing = store.tasks.value.firstOrNull { it.key == link.key && it.status == TaskStatus.COMPLETED }
-                    id = existing?.id ?: store.add(link)!!.id
+                    id = existing?.id ?: store.add(link).id
                     if(existing != null && InstrumentationRegistry.getArguments().getString("livePhotoRedownload") == "true") {
                         store.update(existing.id) { it.copy(status = TaskStatus.QUEUED, uri = "", outputUris = emptyList()) }
                     }

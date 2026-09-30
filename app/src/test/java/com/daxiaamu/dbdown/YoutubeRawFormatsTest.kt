@@ -19,7 +19,7 @@ class YoutubeRawFormatsTest {
         .put("videoDetails", JSONObject().put("videoId", id).put("title", "Test"))
         .put("playabilityStatus", JSONObject().put("status", "OK"))
         .put("streamingData", JSONObject().put("adaptiveFormats", JSONArray(formats.toList())))
-    private fun resolve(player: JSONObject) = youtubePlayerVideo(player, link) { _, url -> url }!!
+    private fun resolve(player: JSONObject) = selectYoutubeFixture(listOf(player), link)!!
 
     @Test fun hdrWinsAtSameResolutionAndFpsDespiteLowerBitrate() {
         val info = resolve(player(video(315,3840,false,90000000),video(337,3840,true,30000000),audio("mp4a.40.2",128000)))
@@ -36,8 +36,29 @@ class YoutubeRawFormatsTest {
     }
     @Test fun ignoresMismatchedVideosAndDrmWhenCombiningResponses() {
         val protected = video(9998,11520,true).put("drmFamilies",JSONArray().put("WIDEVINE"))
-        val merged = mergeYoutubePlayers(listOf(player(video(337,3840,true),audio("mp4a.40.2",128000),protected),
+        val selected = selectYoutubeFixture(listOf(player(video(337,3840,true),audio("mp4a.40.2",128000),protected),
             player(video(9999,15360,true),id="b-Ag7meqZoU")),link)!!
-        assertEquals("https://r1.googlevideo.com/v337",resolve(merged).video)
+        assertEquals("https://r1.googlevideo.com/v337",selected.video)
+    }
+    @Test fun raw8kAv1RemainsEligibleEvenWhenBrowserMenuWouldHideIt() {
+        // The actual codec/itag from QHBruxEyow0; URLs here are synthetic, not live credentials.
+        val av1 = video(571,7680,false).put("mimeType", "video/mp4; codecs=\"av01.0.17M.08.0.110.05.01.06.0\"")
+        val raw = player(av1, video(315,3840,false), audio("mp4a.40.2",128000))
+        val streams = youtubeDirectStreams(raw,link) { _,url -> url }
+        val selected = youtubeSelectStreams(streams) { it }!!
+        assertEquals("571", selected.first.formatId)
+        assertEquals(7680, selected.first.width)
+        assertEquals(4320, selected.first.height)
+        assertEquals(60f, selected.first.fps)
+        assertNotNull(selected.second)
+    }
+    @Test fun listed8kWithoutMediaAddressIsNotMistakenForDownloadable8k() {
+        val av1 = video(571,7680,false).put("mimeType", "video/mp4; codecs=\"av01.0.17M.08.0.110.05.01.06.0\"")
+        av1.remove("url")
+        val raw = player(av1, video(315,3840,false), audio("mp4a.40.2",128000))
+        raw.getJSONObject("streamingData").put("serverAbrStreamingUrl", "https://r1.googlevideo.com/sabr")
+        val streams = youtubeDirectStreams(raw,link) { _,url -> url }
+        assertFalse(streams.any { it.formatId == "571" })
+        assertEquals("315", youtubeSelectStreams(streams) { it }!!.first.formatId)
     }
 }

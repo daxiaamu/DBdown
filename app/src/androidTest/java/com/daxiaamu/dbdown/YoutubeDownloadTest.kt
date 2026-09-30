@@ -22,7 +22,7 @@ class YoutubeDownloadTest {
         val store = vm.store
         assertFalse("Do not interfere with a paused user queue",store.paused.value)
         val link = Links.detect("https://www.youtube.com/shorts/-9OM3w3TWUs")!!
-        val task = store.add(link) ?: error("Sample already exists; keep the user's record untouched")
+        val task = store.add(link)
         try {
             rule.runOnIdle { vm.settings = false; vm.tab = 1; DownloadService.start(rule.activity) }
             val completed = withTimeout(240_000) {

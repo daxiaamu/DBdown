@@ -6,7 +6,6 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
-import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.stream.*
@@ -113,22 +112,9 @@ internal object YoutubeResolver {
             }
             // Keep supported extractor resources too; they may include client-specific URL fixes.
             if(fetched) {
-                attempt { extractor.audioStreams }?.forEach { audio ->
-                    if(audio.isUrl && audio.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP &&
-                        (audio.format == MediaFormat.M4A || audio.codec.orEmpty().startsWith("opus"))) {
-                        candidates += YoutubeStream(audio.content,false,true,audio.codec.orEmpty(),bitrate=
-                            if(audio.averageBitrate>0) audio.averageBitrate*1000L else audio.bitrate.toLong(),
-                            language=audio.audioTrackId ?: audio.audioLocale?.toLanguageTag() ?: audio.audioTrackType?.name.orEmpty(),
-                            original=audio.audioTrackType==AudioTrackType.ORIGINAL,channels=audio.itagItem?.audioChannels ?: 0,
-                            formatId=audio.itag.toString(),source="NewPipe formatted")
-                    }
-                }
-                attempt { extractor.videoStreams + extractor.videoOnlyStreams }?.forEach { video ->
-                    if(video.isUrl && video.deliveryMethod==DeliveryMethod.PROGRESSIVE_HTTP) {
-                        candidates += YoutubeStream(video.content,true,!video.isVideoOnly(),video.codec.orEmpty(),video.width,video.height,
-                            video.fps.toFloat(),bitrate=video.bitrate.toLong(),formatId=video.itag.toString(),source="NewPipe formatted")
-                    }
-                }
+                candidates += attempt { extractor.audioStreams }?.mapNotNull(::youtubeExtractorAudio).orEmpty()
+                candidates += attempt { extractor.videoStreams + extractor.videoOnlyStreams }
+                    ?.mapNotNull(::youtubeExtractorVideo).orEmpty()
             }
             onCandidates(candidates)
             val selection=youtubeSelectStreams(candidates) { stream -> attempt {
@@ -147,13 +133,9 @@ internal object YoutubeResolver {
                 if(extractionError!=null) throw extractionError
                 error("暂未获取到可下载的 YouTube 资源，请重试或在设置中登录")
             }
-            val (video,audio)=selection
             val title=responses.firstOrNull()?.optJSONObject("videoDetails")?.optString("title")
                 ?: if(fetched) extractor.name else "YouTube " + link.key.removePrefix("yt:")
-            return VideoInfo(link,link.key,title,video.url,audio=audio?.url,audioCodec=audio?.audioCodec.orEmpty(),
-                quality="${video.height}p${if(video.fps>30) video.fps.toInt() else ""}${if(video.hdr) " HDR" else ""}",
-                referer=link.url,userAgent=video.userAgent,resolution=resolutionLabel(video.width,video.height),
-                videoPlan=video.plan,audioPlan=audio?.plan,audioUserAgent=audio?.userAgent)
+            return youtubeVideoInfo(link,title,selection)
         } catch(e: org.schabi.newpipe.extractor.exceptions.ExtractionException) {
             val message = when(e) {
                 is org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException,
@@ -169,16 +151,3 @@ internal object YoutubeResolver {
         } finally { tracking.remove(); players.remove() }
     }
 }
-
-internal fun bestYoutubeVideo(streams: List<VideoStream>, hasAudio: Boolean): VideoStream? = streams
-    .filter { it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.format in setOf(MediaFormat.MPEG_4, MediaFormat.WEBM) &&
-        (!it.isVideoOnly() || hasAudio) && listOf("avc", "hev", "hvc", "av01", "vp9", "vp09").any(it.codec.orEmpty()::startsWith) }
-    .maxWithOrNull(compareBy<VideoStream> { it.width.toLong() * it.height }
-        .thenBy { Regex("^[0-9]+").find(it.getResolution())?.value?.toIntOrNull() ?: 0 }.thenBy { it.fps }.thenBy { it.bitrate })
-
-/** Keep the original language before comparing bitrate; never pick a dub just for more bits. */
-internal fun bestYoutubeAudio(streams: List<AudioStream>): AudioStream? = streams.filter {
-    it.isUrl && it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && (it.format == MediaFormat.M4A || (it.format in setOf(MediaFormat.WEBMA, MediaFormat.WEBMA_OPUS) && it.codec.orEmpty().startsWith("opus")))
-}.maxWithOrNull(compareBy<AudioStream> { it.audioTrackType == AudioTrackType.ORIGINAL }
-    .thenBy { if(it.averageBitrate > 0) it.averageBitrate.toLong() * 1000 else it.bitrate.toLong() }
-    .thenBy { it.bitrate })
