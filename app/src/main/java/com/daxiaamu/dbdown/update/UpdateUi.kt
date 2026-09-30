@@ -1,5 +1,6 @@
 package com.daxiaamu.dbdown.update
 
+import com.daxiaamu.dbdown.AppProgressSpinner
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
@@ -50,7 +51,7 @@ import java.util.Locale
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Box(Modifier.size(64.dp, 48.dp), contentAlignment = Alignment.Center) {
-                    if(state.checking) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    if(state.checking) AppProgressSpinner(Modifier.size(20.dp), strokeWidth = 2.dp)
                     else TextButton(onClick = { manager.check(true) }, modifier = Modifier.fillMaxSize().testTag("checkUpdate"),
                         contentPadding = PaddingValues(0.dp)) { Text("检查更新", fontSize = 13.sp) }
                     if(state.redDot) Box(Modifier.align(Alignment.TopEnd).padding(top = 3.dp).size(6.dp)
@@ -117,9 +118,9 @@ import java.util.Locale
                         modifier = Modifier.width(160.dp).height(48.dp)) {
                         if(state.busy) {
                             if(state.stage == UpdateStage.DOWNLOADING && state.progress != null)
-                                CircularProgressIndicator(progress = { state.progress!!.coerceAtMost(.99f) },
+                                AppProgressSpinner(progress = { state.progress!!.coerceAtMost(.99f) },
                                     modifier = Modifier.size(20.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
-                            else CircularProgressIndicator(Modifier.size(20.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
+                            else AppProgressSpinner(Modifier.size(20.dp), color = LocalContentColor.current, strokeWidth = 2.dp)
                             Spacer(Modifier.width(8.dp))
                         }
                         Text(when(state.stage) {

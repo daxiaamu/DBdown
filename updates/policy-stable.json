@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 13,
+  "policyRevision": 14,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.15: independent downloads, highest available media and original albums"
+  "reason": "Publish 0.6.16: media specifications and improved clipboard experience"
 }

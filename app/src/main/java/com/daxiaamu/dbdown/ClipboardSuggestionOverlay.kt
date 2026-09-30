@@ -25,11 +25,7 @@ internal val avoidsSystemIsland: Boolean get() = Build.VERSION.SDK_INT >= 36 ||
     val ready=(prompt as? ClipboardPrompt.Ready)?.info
     val resolving=prompt is ClipboardPrompt.Resolving
     val failed=prompt is ClipboardPrompt.Failed
-    val title=when {
-        ready != null -> "发现${ready.source.platform.label}${if(ready.images.isEmpty()) "视频" else "图集 · ${ready.images.size} 张"}"
-        failed -> "暂时无法解析链接"
-        else -> "发现可下载内容"
-    }
+    val title="发现视频"
     val text=when {
         ready != null -> ready.title
         failed -> "解析失败，请检查网络后重试。"
@@ -41,16 +37,22 @@ internal val avoidsSystemIsland: Boolean get() = Build.VERSION.SDK_INT >= 36 ||
             vm.dismissClipboard()
         }
     }
+    // Keep the final drag position during the visibility exit animation.
+    var swipeKey by remember { mutableStateOf(prompt?.key) }
+    if(prompt != null) swipeKey=prompt.key
+    val swipe=rememberHeadsUpSwipe(swipeKey) {
+        if(vm.clipboardPrompt?.key == prompt?.key) vm.dismissClipboard()
+    }
     AnimatedVisibility(prompt != null,
         modifier=Modifier.align(Alignment.TopCenter).statusBarsPadding()
             .padding(top=if(avoidsSystemIsland) 96.dp else 8.dp,start=16.dp,end=16.dp),
         enter=slideInVertically(tween(220)) { -it } + fadeIn(),
         exit=slideOutVertically(tween(180)) { -it } + fadeOut()) {
-        GlassPrompt(haze,Modifier.widthIn(max=560.dp).fillMaxWidth().testTag("downloadHeadsUp")) {
+        GlassPrompt(haze,swipe.widthIn(max=560.dp).fillMaxWidth().testTag("downloadHeadsUp")) {
             Column(Modifier.padding(start=18.dp,end=10.dp,top=10.dp,bottom=8.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
-                    if(resolving) CircularProgressIndicator(Modifier.size(24.dp),strokeWidth=2.dp)
-                    else Glyph("clipboard",tint=MaterialTheme.colorScheme.primary)
+                    prompt?.let { PlatformIcon(it.link.platform) }
+                    if(resolving) AppProgressSpinner(Modifier.padding(start=8.dp).size(16.dp))
                     Text(title,style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f).padding(start=10.dp))
                     IconButton(onClick=vm::dismissClipboard) { Glyph("close","忽略此提示") }
                 }

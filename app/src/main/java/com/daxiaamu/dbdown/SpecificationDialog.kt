@@ -21,7 +21,7 @@ import androidx.compose.ui.window.Dialog
         title={ Text("下载规格") }, text={
             Column(verticalArrangement=Arrangement.spacedBy(16.dp)) {
                 if(state.loading) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    AppProgressBar(Modifier.fillMaxWidth())
                     Text("正在获取可用的视频和音频规格…")
                 }
                 if(catalog != null) {
@@ -42,7 +42,7 @@ import androidx.compose.ui.window.Dialog
                 }
                 state.error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
                 if(state.applying) {
-                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    AppProgressBar(Modifier.fillMaxWidth())
                     Text("正在验证所选规格…",style=MaterialTheme.typography.bodySmall)
                 }
             }
@@ -106,7 +106,7 @@ import androidx.compose.ui.window.Dialog
         Text(message)
         if(busy) {
             Spacer(Modifier.height(12.dp))
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            AppProgressBar(Modifier.fillMaxWidth())
         }
         Spacer(Modifier.height(12.dp))
     },actions={

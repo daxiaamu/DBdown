@@ -1,4 +1,5 @@
 package com.daxiaamu.dbdown
+import androidx.compose.ui.geometry.Offset
 import android.app.NotificationManager
 import android.content.ClipboardManager
 import androidx.compose.ui.test.*
@@ -14,6 +15,13 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class HeadsUpAppearanceTest {
     @get:Rule val rule=createAndroidComposeRule<MainActivity>()
+    private fun capture(name: String) {
+        val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
+        File(rule.activity.getExternalFilesDir(null),name).outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG,100,it)
+        }
+        bitmap.recycle()
+    }
     @Test fun parsingResultAndFailureAreVisibleInAppWithoutNativePrompts() {
         val vm=ViewModelProvider(rule.activity)[MainViewModel::class.java]
         val clipboard=rule.activity.getSystemService(ClipboardManager::class.java)
@@ -37,7 +45,7 @@ class HeadsUpAppearanceTest {
                 vm.settings=false
                 vm.clipboard.state=ClipboardPrompt.Ready(link,VideoInfo(link,link.key,"视频解析完成，可以下载","",referer="",userAgent=""))
             }
-            rule.onNodeWithText("发现抖音视频").assertIsDisplayed()
+            rule.onNodeWithText("发现视频").assertIsDisplayed()
             rule.onNode(hasText("下载") and hasAnyAncestor(hasTestTag("downloadHeadsUp"))).assertIsEnabled()
             val bitmap=InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot()
             File(rule.activity.getExternalFilesDir(null),"headsup-restored.png").outputStream().use {
@@ -46,8 +54,21 @@ class HeadsUpAppearanceTest {
             bitmap.recycle()
             assertFalse(rule.activity.getSystemService(NotificationManager::class.java).activeNotifications.any { it.id==9502 })
             rule.runOnIdle { vm.clipboard.state=ClipboardPrompt.Failed(link) }
-            rule.onNodeWithText("重试").assertIsDisplayed()
-            rule.onNodeWithContentDescription("忽略此提示").performClick()
+            rule.onNode(hasText("重试") and hasAnyAncestor(hasTestTag("downloadHeadsUp"))).assertIsDisplayed()
+            val card=rule.onNodeWithTag("downloadHeadsUp")
+            capture("headsup-before-drag.png")
+            val before=card.fetchSemanticsNode().boundsInRoot.top
+            card.performTouchInput { down(center); moveBy(Offset(0f,-height*0.2f),300) }
+            val dragged=card.fetchSemanticsNode().boundsInRoot.top
+            assertTrue("Card must follow the finger before release",dragged<before)
+            capture("headsup-during-drag.png")
+            card.performTouchInput { moveBy(Offset.Zero,300); up() }
+            rule.waitForIdle()
+            assertEquals(before,card.fetchSemanticsNode().boundsInRoot.top,2f)
+            assertNotNull(vm.clipboardPrompt)
+            card.performTouchInput { swipeUp(durationMillis=200) }
+            rule.waitForIdle()
+            assertNull(vm.clipboardPrompt)
             rule.onNodeWithTag("downloadHeadsUp").assertDoesNotExist()
         } finally {
             rule.runOnIdle {

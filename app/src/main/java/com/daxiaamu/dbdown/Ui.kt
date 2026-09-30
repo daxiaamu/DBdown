@@ -424,8 +424,8 @@ private val paths = mapOf(
             }
             if(task.status.pending) {
                 if(task.status == TaskStatus.PAUSED || (task.total > 0 && task.status == TaskStatus.DOWNLOADING)) {
-                    LinearProgressIndicator(progress = { task.progress }, modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape))
-                } else LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape))
+                    AppProgressBar(progress = { task.progress }, modifier = Modifier.fillMaxWidth().height(3.dp))
+                } else AppProgressBar(modifier = Modifier.fillMaxWidth().height(3.dp))
             }
             if(task.error.isNotEmpty()) Text(task.error, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
             if(task.status == TaskStatus.COMPLETED && task.mimeType.startsWith("image/")) {
@@ -486,7 +486,7 @@ private val paths = mapOf(
             OutlinedButton(onClick=vm::chooseDeleteFiles,enabled=!vm.deleting,
                 modifier=Modifier.fillMaxWidth()) { Text("删除任务和文件") }
         }
-        if(vm.deleting) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if(vm.deleting) AppProgressBar(Modifier.fillMaxWidth())
     },actions={
         TextButton(onClick=vm::dismissDeletion,enabled=!vm.deleting) { Text("取消") }
         if(!choice) Button(onClick={ vm.confirmDeletion(false) },enabled=!vm.deleting,

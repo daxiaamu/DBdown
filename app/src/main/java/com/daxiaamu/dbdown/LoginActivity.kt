@@ -52,7 +52,7 @@ class LoginActivity : ComponentActivity() {
                         LoginToolbar()
                         // Keep the web viewport stable: changing progress must not resize the page.
                         Box(Modifier.fillMaxWidth().height(3.dp)) {
-                            if(loadingProgress < 100) LinearProgressIndicator(progress = { loadingProgress / 100f }, modifier = Modifier.fillMaxSize())
+                            if(loadingProgress < 100) AppProgressBar(progress = { loadingProgress / 100f }, modifier = Modifier.fillMaxSize())
                         }
                         AndroidView(modifier = Modifier.weight(1f).fillMaxWidth(),
                             factory = { view }, onRelease = { releaseBrowser(it) })
