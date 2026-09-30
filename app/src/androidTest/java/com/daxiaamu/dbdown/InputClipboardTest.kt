@@ -19,7 +19,7 @@ class InputClipboardTest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
     private val vm get() = ViewModelProvider(rule.activity)[MainViewModel::class.java]
     private val clipboard get() = rule.activity.getSystemService(ClipboardManager::class.java)
-    private fun notification() = rule.activity.getSystemService(NotificationManager::class.java).activeNotifications.firstOrNull { it.id == ClipboardLivePrompt.NOTIFICATION_ID }?.notification
+    private fun notification() = rule.activity.getSystemService(NotificationManager::class.java).activeNotifications.firstOrNull { it.id == 9502 }?.notification
     @Test fun focusSuggestsFillWithoutOverwritingAndClearRemovesEverything() {
         val original = clipboard.primaryClip
         var enabled = true

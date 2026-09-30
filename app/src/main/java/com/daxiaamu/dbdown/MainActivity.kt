@@ -48,12 +48,9 @@ class MainActivity : ComponentActivity() {
     }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // One-shot notification actions must not replace the activity's launch identity.
-        if(ClipboardLivePrompt.handle(intent)) return
         setIntent(intent); handleIntent(intent)
     }
     private fun handleIntent(intent: Intent?) {
-        if(ClipboardLivePrompt.handle(intent)) return
         if(intent?.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
             model.onShare(intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
         } else if(intent?.getBooleanExtra("downloads", false) == true) model.tab = 1

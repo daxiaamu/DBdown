@@ -15,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeSource
 
 class LoginActivity : ComponentActivity() {
     private val clipboardModel by viewModels<MainViewModel>()
@@ -42,9 +44,10 @@ class LoginActivity : ComponentActivity() {
         browser = view
         setContent {
             DownloaderTheme {
+                val haze=remember { HazeState() }
                 BackHandler { finish() }
                 Box(Modifier.fillMaxSize()) {
-                Surface(Modifier.fillMaxSize()) {
+                Surface(Modifier.fillMaxSize().hazeSource(haze)) {
                     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
                         LoginToolbar()
                         // Keep the web viewport stable: changing progress must not resize the page.
@@ -55,15 +58,11 @@ class LoginActivity : ComponentActivity() {
                             factory = { view }, onRelease = { releaseBrowser(it) })
                     }
                 }
-                ClipboardSuggestionNotifications(clipboardModel,
+                ClipboardSuggestionOverlay(clipboardModel, haze,
                     requestNotifications = {
                         startActivity(Intent(this@LoginActivity, MainActivity::class.java)
                             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                             .putExtra("downloads", true))
-                    }, openInput = { link ->
-                        startActivity(Intent(this@LoginActivity, MainActivity::class.java)
-                            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                            .setAction(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, link))
                     })
                 }
             }

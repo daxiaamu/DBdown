@@ -21,6 +21,8 @@ class DownloaderApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Remove the clipboard notification left by older installed versions.
+        getSystemService(android.app.NotificationManager::class.java).cancel(9502)
         WebAccounts.initialize(this)
         DouyinDesktop.initialize(this)
         store = DownloadStore(this)

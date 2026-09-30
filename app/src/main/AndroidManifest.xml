@@ -5,7 +5,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <application android:name=".DownloaderApp" android:label="@string/app_name" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher"
         android:theme="@style/Theme.DBDown" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:supportsRtl="true"
         android:usesCleartextTraffic="false">
@@ -25,7 +24,6 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
-        <receiver android:name=".ClipboardPromptDismissReceiver" android:exported="false" />
         <service android:name=".DownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
     </application>
 </manifest>

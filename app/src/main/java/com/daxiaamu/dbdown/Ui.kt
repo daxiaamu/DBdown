@@ -249,7 +249,7 @@ private val paths = mapOf(
                 FloatingTabs(pager, haze,
                     Modifier.align(Alignment.BottomCenter).padding(bottom = 18.dp)) { vm.tab = it }
             }
-            ClipboardSuggestionNotifications(vm, requestNotifications)
+            ClipboardSuggestionOverlay(vm, haze, requestNotifications)
         }
     }
     if(vm.inputVisible) LinkDialog(vm) { if(vm.submit()) requestNotifications() }
@@ -550,16 +550,6 @@ private val paths = mapOf(
                 Text("在其他应用中添加下载", style = MaterialTheme.typography.titleMedium)
                 Text("系统不允许后台读取剪贴板。在视频应用中选择「分享 → 更多 → 逗逼下载器」，确认后即可下载。",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-        if(android.os.Build.VERSION.SDK_INT >= 36) Surface(onClick = { ClipboardLivePrompt.settings(context) }, shape = RoundedCornerShape(22.dp)) {
-            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("流体云与实时活动", style = MaterialTheme.typography.titleMedium)
-                    Text("在系统通知设置中允许显示实时活动。剪贴板提示统一使用系统通知，支持时由系统显示为流体云。",
-                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Glyph("arrow")
             }
         }
         Surface(onClick = {
