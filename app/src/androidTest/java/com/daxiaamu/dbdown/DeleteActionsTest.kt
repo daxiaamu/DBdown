@@ -37,9 +37,11 @@ class DeleteActionsTest {
         val uris = listOf(makePicture(), makePicture(), makePicture())
         val ids = mutableListOf<String>()
         var originalPaused = false
+        var clipboardEnabled = true
         rule.runOnIdle {
             check(vm.store.tasks.value.none { it.status.active })
             originalPaused = vm.store.paused.value
+            clipboardEnabled=vm.clipboardEnabled; vm.setClipboard(false)
             vm.store.pauseAll(); vm.settings = false; vm.tab = 1
             repeat(2) { index ->
                 val task = vm.store.add(Links.detect("https://www.bilibili.com/video/BV1xx411c7mD?p=${7200+index}")!!)
@@ -50,7 +52,8 @@ class DeleteActionsTest {
         }
         try {
             rule.waitForIdle()
-            rule.onNodeWithContentDescription("全部开始").assertIsDisplayed()
+            if(vm.store.tasks.value.any { it.status.pending }) rule.onNodeWithContentDescription("全部开始").assertIsDisplayed()
+            else rule.onNodeWithContentDescription("全部开始").assertDoesNotExist()
             rule.onNodeWithText("最多同时下载 3 个任务").assertDoesNotExist()
             // Open the actual clear-all entry, but never authorize deleting user's records.
             rule.onNodeWithTag("clearDownloads").performClick()
@@ -75,6 +78,7 @@ class DeleteActionsTest {
                 vm.dismissDeletion()
                 ids.forEach { id -> vm.store.update(id) { it.copy(status = TaskStatus.CANCELLED) }; vm.store.remove(id) }
                 if(!originalPaused) vm.store.resumeAll()
+                vm.setClipboard(clipboardEnabled)
             }
             uris.forEach { runCatching { resolver.delete(it, null, null) } }
         }

@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 
 @Composable internal fun SpecificationDialog(editor: SpecificationEditor) {
     val state=editor.state ?: return
@@ -83,11 +84,34 @@ import androidx.compose.ui.unit.dp
     }
 }
 
+@Composable internal fun ConfirmationDialogFrame(title: String, dismiss: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit, actions: @Composable RowScope.() -> Unit) {
+    Dialog(onDismissRequest=dismiss) {
+        Surface(shape=RoundedCornerShape(28.dp),color=AlertDialogDefaults.containerColor,
+            tonalElevation=AlertDialogDefaults.TonalElevation) {
+            Column(Modifier.padding(start=24.dp,end=24.dp,top=24.dp,bottom=12.dp)) {
+                Text(title,style=MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(16.dp))
+                content()
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp,Alignment.End),
+                    verticalAlignment=Alignment.CenterVertically,content=actions)
+            }
+        }
+    }
+}
+
 @Composable internal fun DestructiveFileConfirmation(title: String, message: String, confirmLabel: String,
     busy: Boolean, dismiss: ()->Unit, confirm: ()->Unit, tag: String) {
-    AlertDialog(onDismissRequest=dismiss,shape=RoundedCornerShape(28.dp),title={ Text(title) },text={ Column(verticalArrangement=Arrangement.spacedBy(12.dp)) {
+    ConfirmationDialogFrame(title,dismiss,content={
         Text(message)
-        if(busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    } },confirmButton={ Button(onClick=confirm,enabled=!busy,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error),
-        modifier=Modifier.testTag(tag)) { Text(confirmLabel) } },dismissButton={ TextButton(onClick=dismiss,enabled=!busy) { Text("取消") } })
+        if(busy) {
+            Spacer(Modifier.height(12.dp))
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        Spacer(Modifier.height(12.dp))
+    },actions={
+        TextButton(onClick=dismiss,enabled=!busy) { Text("取消") }
+        Button(onClick=confirm,enabled=!busy,colors=ButtonDefaults.buttonColors(containerColor=MaterialTheme.colorScheme.error),
+            modifier=Modifier.testTag(tag)) { Text(confirmLabel) }
+    })
 }

@@ -465,35 +465,33 @@ private val paths = mapOf(
     }
 }
 @Composable private fun DeleteTasksDialog(vm: MainViewModel) {
-    val request = vm.deleteRequest ?: return
-    val files = request.withFiles == true
-    val choice = request.withFiles == null
-    val count = request.ids.size
-    if(files) {
+    val request=vm.deleteRequest ?: return
+    val count=request.ids.size
+    if(request.withFiles == true) {
         DestructiveFileConfirmation("删除任务和文件？","将删除 $count 个任务，以及这些任务保存的所有视频、图片和音频。文件删除后无法恢复。未完成的下载会停止，临时文件会清理。",
             "确认删除文件",vm.deleting,vm::dismissDeletion,{ vm.confirmDeletion(true) },"confirmDeleteTasks")
         return
     }
-    AlertDialog(onDismissRequest = vm::dismissDeletion, shape = RoundedCornerShape(28.dp),
-        title = { Text(if(choice) "清空下载记录" else if(files) "删除任务和文件？" else "删除任务？") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if(choice) "将清空 $count 个下载任务，请选择是否保留已下载文件。"
-                    else if(files) "将删除 $count 个任务，以及这些任务保存的所有视频、图片和音频。文件删除后无法恢复。"
-                    else "将删除 $count 个任务，已保存的视频、图片和音频会保留。")
-                Text("未完成的下载会停止，临时文件会清理。", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if(choice) {
-                    OutlinedButton(onClick = { vm.confirmDeletion(false) }, enabled = !vm.deleting, modifier = Modifier.fillMaxWidth()) { Text("仅删除任务") }
-                    OutlinedButton(onClick = vm::chooseDeleteFiles, enabled = !vm.deleting, modifier = Modifier.fillMaxWidth()) { Text("删除任务和文件") }
-                }
-                if(vm.deleting) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-        }, confirmButton = {
-            if(!choice) Button(onClick = { vm.confirmDeletion(files) }, enabled = !vm.deleting,
-                colors = if(files) ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error) else ButtonDefaults.buttonColors(),
-                modifier = Modifier.testTag("confirmDeleteTasks")) { Text(if(files) "确认删除文件" else "删除任务") }
-        }, dismissButton = { TextButton(onClick = vm::dismissDeletion, enabled = !vm.deleting) { Text("取消") } })
+    val choice=request.withFiles == null
+    ConfirmationDialogFrame(if(choice) "清空下载记录" else "删除任务？",vm::dismissDeletion,content={
+        Text(if(choice) "将清空 $count 个下载任务，请选择是否保留已下载文件。"
+            else "将删除 $count 个任务，已保存的视频、图片和音频会保留。")
+        Spacer(Modifier.height(8.dp))
+        Text("未完成的下载会停止，临时文件会清理。",style=MaterialTheme.typography.bodyMedium,
+            color=MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        if(choice) {
+            OutlinedButton(onClick={ vm.confirmDeletion(false) },enabled=!vm.deleting,
+                modifier=Modifier.fillMaxWidth()) { Text("仅删除任务") }
+            OutlinedButton(onClick=vm::chooseDeleteFiles,enabled=!vm.deleting,
+                modifier=Modifier.fillMaxWidth()) { Text("删除任务和文件") }
+        }
+        if(vm.deleting) LinearProgressIndicator(Modifier.fillMaxWidth())
+    },actions={
+        TextButton(onClick=vm::dismissDeletion,enabled=!vm.deleting) { Text("取消") }
+        if(!choice) Button(onClick={ vm.confirmDeletion(false) },enabled=!vm.deleting,
+            modifier=Modifier.testTag("confirmDeleteTasks")) { Text("删除任务") }
+    })
 }
 
 @Composable private fun SettingsPage(vm: MainViewModel, topInset: Dp, onClipboard: (Boolean) -> Unit) {
