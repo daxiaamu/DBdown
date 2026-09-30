@@ -16,7 +16,7 @@ class YoutubeQualityTest {
     }
     private fun audio(rate: Int, type: AudioTrackType = AudioTrackType.ORIGINAL,
         format: MediaFormat = MediaFormat.M4A, delivery: DeliveryMethod = DeliveryMethod.PROGRESSIVE_HTTP,
-        codec: String = if(format == MediaFormat.WEBMA) "opus" else "mp4a.40.2") =
+        codec: String = if(format in setOf(MediaFormat.WEBMA, MediaFormat.WEBMA_OPUS)) "opus" else "mp4a.40.2") =
         AudioStream.Builder().setId("$rate-$type").setContent("https://example.com/audio", true)
             .setItagItem(ItagItem(251, ItagItem.ItagType.AUDIO, format, rate).apply { setCodec(codec) })
             .setMediaFormat(format).setAverageBitrate(rate).setAudioTrackType(type).setDeliveryMethod(delivery).build()
@@ -33,6 +33,10 @@ class YoutubeQualityTest {
     @Test fun choosesHighestCompatibleResolution() {
         val high = video(7680,4320,"av01")
         assertSame(high,bestYoutubeVideo(listOf(video(1920,1080),high,video(3840,2160,"hvc1")),true))
+    }
+    @Test fun realNewpipeOpusEnumIsNotFilteredOut() {
+        val opus = audio(160,format=MediaFormat.WEBMA_OPUS)
+        assertSame(opus,bestYoutubeAudio(listOf(audio(128),opus)))
     }
     @Test fun webm4kBeatsAvc1080() {
         val high = video(3840,2160,"vp9",format=MediaFormat.WEBM)

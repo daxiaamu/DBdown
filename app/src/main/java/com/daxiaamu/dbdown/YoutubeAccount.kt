@@ -25,7 +25,11 @@ internal fun youtubePlayerResponse(page: String): JSONObject? {
 
 /** Authenticated web player data is preferred; missing playable formats can fall back to public extraction. */
 internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, String) -> String = ::decodeYoutubeUrl): VideoInfo? {
-    val player = youtubePlayerResponse(page) ?: return null
+    return youtubePlayerVideo(youtubePlayerResponse(page) ?: return null, link, decode)
+}
+
+/** Use actual format metadata rather than an itag whitelist, including future resolutions. */
+internal fun youtubePlayerVideo(player: JSONObject, link: VideoLink, decode: (String, String) -> String = ::decodeYoutubeUrl): VideoInfo? {
     val status = player.optJSONObject("playabilityStatus")?.optString("status")
     if(status != "OK") return null
     val details = player.optJSONObject("videoDetails") ?: return null
@@ -40,7 +44,7 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
     val adaptive = formats("adaptiveFormats")
     val audio = adaptive.filter {
         val mime = it.optString("mimeType")
-        (mime.startsWith("audio/mp4") && mime.contains("mp4a")) ||
+        (mime.startsWith("audio/mp4") && listOf("mp4a", "ac-3", "ec-3").any(mime::contains)) ||
             (mime.startsWith("audio/webm") && mime.contains("opus"))
     }
         .maxWithOrNull(compareBy<JSONObject> { it.optJSONObject("audioTrack")?.optBoolean("audioIsDefault") == true }
@@ -52,7 +56,7 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
         (mime.startsWith("video/mp4") || mime.startsWith("video/webm")) &&
             listOf("avc1", "hev1", "hvc1", "av01", "vp9", "vp09").any(mime::contains)
     }.maxWithOrNull(compareBy<JSONObject> { it.optLong("width") * it.optLong("height") }
-        .thenBy { it.optInt("fps") }.thenBy { it.optLong("bitrate") }) ?: return null
+        .thenBy { it.optInt("fps") }.thenBy { youtubeHdr(it) }.thenBy { it.optLong("bitrate") }) ?: return null
     val id = details.getString("videoId")
     fun stream(format: JSONObject): String {
         val direct = format.optString("url")
@@ -64,12 +68,12 @@ internal fun youtubeWebVideo(page: String, link: VideoLink, decode: (String, Str
         }
     }
     return VideoInfo(link, link.key, details.optString("title", "YouTube $id"), stream(video),
-        audio = audio?.let(::stream), audioCodec = if(audio?.optString("mimeType")?.contains("opus") == true) "opus" else "aac", quality = video.optString("qualityLabel"),
+        audio = audio?.let(::stream), audioCodec = youtubeAudioCodec(audio?.optString("mimeType").orEmpty()), quality = video.optString("qualityLabel"),
         referer = link.url, userAgent = VideoResolver.DESKTOP,
         resolution = resolutionLabel(video.optInt("width"), video.optInt("height")))
 }
 
-private fun decodeYoutubeUrl(id: String, raw: String): String {
+internal fun decodeYoutubeUrl(id: String, raw: String): String {
     val direct = if(raw.startsWith("https://")) raw else {
         val parts = raw.split('&').associate { part ->
             val pair = part.split('=', limit = 2)
@@ -80,4 +84,53 @@ private fun decodeYoutubeUrl(id: String, raw: String): String {
             YoutubeJavaScriptPlayerManager.deobfuscateSignature(id, parts["s"].orEmpty())).build().toString()
     }
     return YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated(id, direct)
+}
+
+internal fun youtubeAudioCodec(mime: String): String = when {
+    mime.contains("opus") -> "opus"
+    mime.contains("ec-3") -> "eac3"
+    mime.contains("ac-3") -> "ac3"
+    else -> "aac"
+}
+
+internal fun youtubeHdr(format: JSONObject): Boolean {
+    val transfer = format.optJSONObject("colorInfo")?.optString("transferCharacteristics").orEmpty()
+    return transfer.contains("SMPTEST2084") || transfer.contains("ARIB_STD_B67") ||
+        format.optString("qualityLabel").contains("HDR", ignoreCase = true)
+}
+
+internal fun mergeYoutubePlayers(players: List<JSONObject>, link: VideoLink): JSONObject? {
+    val matching = players.filter {
+        it.optJSONObject("videoDetails")?.optString("videoId") == link.key.removePrefix("yt:") &&
+            it.optJSONObject("playabilityStatus")?.optString("status") == "OK"
+    }
+    val first = matching.firstOrNull() ?: return null
+    val data = JSONObject()
+    for(name in listOf("formats", "adaptiveFormats")) {
+        val combined = org.json.JSONArray()
+        matching.forEach { player ->
+            player.optJSONObject("streamingData")?.optJSONArray(name)?.let { array ->
+                for(index in 0 until array.length()) array.optJSONObject(index)?.let(combined::put)
+            }
+        }
+        data.put(name, combined)
+    }
+    return JSONObject().put("videoDetails", first.getJSONObject("videoDetails"))
+        .put("playabilityStatus", first.getJSONObject("playabilityStatus")).put("streamingData", data)
+}
+
+/** Manifests use /n/value in addition to the usual query parameter. */
+internal fun decodeYoutubeManifestUrl(id: String, raw: String,
+    decode: (String,String) -> String = ::decodeYoutubeUrl): String {
+    val url = raw.toHttpUrlOrNull() ?: error("Invalid manifest URL")
+    val index = url.pathSegments.indexOf("n")
+    val builder = url.newBuilder()
+    if(index >= 0 && index + 1 < url.pathSegments.size) {
+        val value = url.pathSegments[index + 1]
+        val probe = url.newBuilder().encodedPath("/").query(null).addQueryParameter("n",value).build()
+        val decoded = decode(id,probe.toString()).toHttpUrlOrNull()?.queryParameter("n") ?: error("Invalid n parameter")
+        builder.setPathSegment(index + 1,decoded)
+    }
+    val transformed = builder.build().toString()
+    return if(url.queryParameter("n") != null) decode(id,transformed) else transformed
 }

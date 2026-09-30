@@ -15,6 +15,8 @@ import android.os.IBinder
 import android.provider.MediaStore
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -48,6 +50,8 @@ class DownloadService : Service() {
     private val calls = ConcurrentHashMap<String, MutableSet<Call>>()
     private var lastStartId = 0
     private val transferClient = VideoResolver.client.newBuilder().callTimeout(0, TimeUnit.SECONDS).build()
+    private val sizeClient = transferClient.newBuilder().callTimeout(8, TimeUnit.SECONDS).retryOnConnectionFailure(false).build()
+    private val sizeProbeSlots = Semaphore(4)
     private val notifications get() = getSystemService(NotificationManager::class.java)
 
     override fun onCreate() {
@@ -95,37 +99,51 @@ class DownloadService : Service() {
             if(!store.claim(task.id, info)) throw CancellationException("Task no longer active")
             withContext(Dispatchers.IO) {
                 state(task.id, TaskStatus.DOWNLOADING)
-                if(info.images.isNotEmpty()) { downloadAlbum(task, info, dir); return@withContext }
-                val wholeTotal = if(info.audio != null) coroutineScope {
-                    val videoSize = async { probeSize(info.video, info, task.id, worker) }
-                    val audioSize = async { probeSize(info.audio, info, task.id, worker) }
-                    val v = videoSize.await(); val a = audioSize.await()
-                    if(v > 0 && a > 0) v + a else -1L
-                } else -1L
-                val video = File(dir, "video.mp4")
-                downloadWithFallback(listOf(info.video) + info.videoFallbacks,
-                    refreshOnUnavailable = if(info.source.platform == Platform.DOUYIN) {
-                        { DouyinPage.desktopVideoUrls(DouyinDesktop.detail(info.id.removePrefix("dy:")), info.source) }
-                    } else null) { url ->
-                    download(url, video, info, task.id, 0L, info.audio != null, wholeTotal)
+                val resources=downloadResources(info)
+                val progress=TaskTransferProgress(resources)
+                publishProgress(task.id,progress,0)
+                val probes=launch {
+                    resources.filter { it.plan==null }.map { resource -> async {
+                        sizeProbeSlots.withPermit {
+                            val size=probeResourceSize(sizeClient,resource,info.referer) { trackCall(task.id,it,worker) }
+                            progress.discovered(resource.key,resource.url,size)
+                            publishProgress(task.id,progress,null)
+                        }
+                    } }.awaitAll()
                 }
-                val output = if(info.audio != null) {
-                    val audio = File(dir, "audio.m4a")
-                    download(info.audio, audio, info, task.id, video.length(), false)
-                    state(task.id, TaskStatus.MERGING)
-                    File(dir, "merged.mp4").also {
-                        if(info.audioCodec.equals("flac", true)) LosslessMuxer.merge(video, audio, it)
-                        else if(info.source.platform == Platform.YOUTUBE) LosslessMuxer.merge(video, audio, it, info.audioCodec)
-                        else mux(video, audio, it)
+                try {
+                    if(info.images.isNotEmpty()) { downloadAlbum(task,info,dir,progress); return@withContext }
+                    val audioInfo=info.copy(userAgent=info.audioUserAgent ?: info.userAgent)
+                    val video = File(dir, "video.mp4")
+                    if(info.videoPlan != null) downloadSegments(info.videoPlan, video, info, task.id, progress, "video")
+                    else downloadWithFallback(listOf(info.video) + info.videoFallbacks,
+                        refreshOnUnavailable = if(info.source.platform == Platform.DOUYIN) {
+                            { DouyinPage.desktopVideoUrls(DouyinDesktop.detail(info.id.removePrefix("dy:")), info.source) }
+                        } else null) { url ->
+                        download(url, video, info, task.id, progress, "video")
                     }
-                } else video
-                validateVideo(output)
-                state(task.id, TaskStatus.SAVING)
-                val uri = publish(output, info.title, task.id)
-                val measured = savedResolution(this@DownloadService, task.copy(uri = uri.toString(), mimeType = "video/mp4"))
-                store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(),
-                    resolution = measured.ifBlank { it.resolution }, bytes = output.length(), total = output.length(), speed = 0, error = "") }
-                notifyResult(task.id, info.title, "已保存到 Movies/逗逼下载器", uri)
+                    val output = if(info.audio != null) {
+                        val audio = File(dir, "audio.m4a")
+                        if(info.audioPlan != null) downloadSegments(info.audioPlan, audio, audioInfo, task.id, progress, "audio")
+                        else download(info.audio, audio, audioInfo, task.id, progress, "audio")
+                        state(task.id, TaskStatus.MERGING)
+                        File(dir, "merged.mp4").also {
+                            if(info.audioCodec.equals("flac", true)) LosslessMuxer.merge(video, audio, it)
+                            else if(info.source.platform == Platform.YOUTUBE) LosslessMuxer.merge(video, audio, it, info.audioCodec)
+                            else mux(video, audio, it)
+                        }
+                    } else if(info.videoPlan != null) {
+                        state(task.id, TaskStatus.MERGING)
+                        File(dir, "merged.mp4").also { LosslessMuxer.remux(video, it) }
+                    } else video
+                    validateVideo(output)
+                    state(task.id, TaskStatus.SAVING)
+                    val uri = publish(output, info.title, task.id)
+                    val measured = savedResolution(this@DownloadService, task.copy(uri = uri.toString(), mimeType = "video/mp4"))
+                    store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = uri.toString(),
+                        resolution = measured.ifBlank { it.resolution }, bytes = progress.snapshot().bytes, total = progress.snapshot().bytes, speed = 0, error = "") }
+                    notifyResult(task.id, info.title, "已保存到 Movies/逗逼下载器", uri)
+                } finally { probes.cancelAndJoin() }
             }
         } catch(e: CancellationException) {
             throw e
@@ -150,17 +168,14 @@ class DownloadService : Service() {
             }
         }
     }
-    private suspend fun downloadAlbum(task: DownloadTask, info: VideoInfo, dir: File) {
+    private suspend fun downloadAlbum(task: DownloadTask, info: VideoInfo, dir: File, progress: TaskTransferProgress) {
         val published = mutableListOf<Uri>()
-        var downloaded = 0L
-        var saved = 0L
         try {
             for((index, url) in info.images.withIndex()) {
                 currentCoroutineContext().ensureActive()
                 state(task.id, TaskStatus.DOWNLOADING)
                 val image = File(dir, "slide-$index-image")
-                download(url, image, info, task.id, downloaded, true)
-                downloaded += image.length()
+                download(url, image, info, task.id, progress, "image:$index")
                 val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 android.graphics.BitmapFactory.decodeFile(image.absolutePath, bounds)
                 check(bounds.outWidth > 0 && bounds.outHeight > 0) { "第 ${index + 1} 张图片无效" }
@@ -170,8 +185,7 @@ class DownloadService : Service() {
                 val extension: String
                 if(motion != null) {
                     val video = File(dir, "slide-$index.mp4")
-                    download(motion, video, info, task.id, downloaded, true)
-                    downloaded += video.length()
+                    download(motion, video, info, task.id, progress, "motion:$index")
                     validateVideo(video)
                     state(task.id, TaskStatus.SAVING)
                     val jpeg = if(bounds.outMimeType == "image/jpeg") image else File(dir, "slide-$index.jpg").also { file ->
@@ -194,12 +208,11 @@ class DownloadService : Service() {
                 }
                 state(task.id, TaskStatus.SAVING)
                 published += publish(output, info.title, "${task.id.take(8)}-${index + 1}", mime, extension, image = true, motion = motion != null)
-                saved += output.length()
             }
             info.music?.let { url ->
                 state(task.id, TaskStatus.DOWNLOADING)
                 val audio = File(dir, "slides-music")
-                download(url, audio, info, task.id, downloaded, false)
+                download(url, audio, info, task.id, progress, "music")
                 val audioTracks = android.media.MediaExtractor()
                 try {
                     audioTracks.setDataSource(audio.absolutePath)
@@ -213,12 +226,11 @@ class DownloadService : Service() {
                 val extension = when(mime) { "audio/mpeg", "audio/mp3" -> "mp3"; "audio/mp4", "video/mp4" -> "m4a"; "audio/flac" -> "flac"; "audio/aac" -> "aac"; else -> error("配乐格式无法识别") }
                 state(task.id, TaskStatus.SAVING)
                 published += publish(audio, info.title, task.id, if(extension == "m4a") "audio/mp4" else mime!!, extension, audio = true)
-                saved += audio.length()
             }
             currentCoroutineContext().ensureActive()
             store.update(task.id) { it.copy(status = TaskStatus.COMPLETED, uri = published.first().toString(),
                 outputUris = published.map(Uri::toString), mimeType = contentResolver.getType(published.first()) ?: "image/jpeg",
-                albumMode = AlbumMode.IMAGES, bytes = saved, total = saved, speed = 0, error = "") }
+                albumMode = AlbumMode.IMAGES, bytes = progress.snapshot().bytes, total = progress.snapshot().bytes, speed = 0, error = "") }
         } catch(e: Exception) {
             published.forEach { runCatching { contentResolver.delete(it, null, null) } }
             throw e
@@ -230,33 +242,43 @@ class DownloadService : Service() {
         store.update(id) { if(it.status.active) it.copy(status = status, speed = 0) else it }
         notifyProgress()
     }
-    private fun probeSize(url: String, info: VideoInfo, id: String, job: Job?): Long = runCatching {
-        val probe = VideoResolver.client.newBuilder().callTimeout(8, TimeUnit.SECONDS).retryOnConnectionFailure(false).build()
-        probe.newCall(Request.Builder().url(url).head().header("User-Agent", info.userAgent)
-            .header("Referer", info.referer).header("Accept-Encoding", "identity").build()).also { trackCall(id, it, job) }.execute().use {
-            if(it.isSuccessful) it.header("Content-Length")?.toLongOrNull() ?: -1L else -1L
+    private fun publishProgress(id: String, progress: TaskTransferProgress, speed: Long?, resolution: String = "") {
+        store.update(id, save = speed == 0L) {
+            val size=progress.snapshot()
+            if(it.status in setOf(TaskStatus.DOWNLOADING,TaskStatus.MERGING,TaskStatus.SAVING))
+                it.copy(bytes=size.bytes,total=size.total,speed=speed ?: it.speed,resolution=resolution.ifBlank { it.resolution })
+            else it
         }
-    }.getOrDefault(-1L)
+        notifyProgress()
+    }
 
-    private suspend fun download(url: String, file: File, info: VideoInfo, id: String, base: Long, hasNext: Boolean, wholeTotal: Long = -1L) {
+    private suspend fun download(url: String, file: File, info: VideoInfo, id: String, progress: TaskTransferProgress, resource: String) {
         val worker = currentCoroutineContext()[Job]
         val measureVideo = info.source.platform == Platform.DOUYIN && file.name == "video.mp4"
         var actualResolution = ""
         var nextProbe = 64 * 1024L
         if(measureVideo) store.update(id) { it.copy(resolution = "") }
+        progress.begin(resource,url)
         ResumableTransfer(transferClient) { trackCall(id, it, worker) }.download(url, file,
             info.id + "|" + info.quality, info.userAgent, info.referer) { bytes, length, speed ->
             if(measureVideo && actualResolution.isBlank() && bytes >= nextProbe) {
                 actualResolution = partialVideoResolution(file)
                 nextProbe = if(nextProbe >= 512 * 1024L) Long.MAX_VALUE else nextProbe * 2
             }
-            val total = if(length >= 0 && !hasNext) base + length else wholeTotal
-            store.update(id, save = speed == 0L) {
-                if(it.status == TaskStatus.DOWNLOADING) it.copy(bytes = base + bytes, total = total, speed = speed,
-                    resolution = actualResolution.ifBlank { it.resolution }) else it
-            }
-            notifyProgress()
+            progress.update(resource,bytes,length)
+            publishProgress(id,progress,speed,actualResolution)
         }
+        progress.complete(resource,file.length())
+        publishProgress(id,progress,0,actualResolution)
+    }
+    private suspend fun downloadSegments(plan: SegmentPlan, file: File, info: VideoInfo, id: String, progress: TaskTransferProgress, resource: String) {
+        val worker=currentCoroutineContext()[Job]
+        SegmentTransfer(transferClient, { trackCall(id,it,worker) }).download(plan,file,info.userAgent,info.referer) { bytes,length,speed ->
+            progress.update(resource,bytes,length)
+            publishProgress(id,progress,speed)
+        }
+        progress.complete(resource,file.length())
+        publishProgress(id,progress,0)
     }
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private suspend fun mux(video: File, audio: File, output: File) {

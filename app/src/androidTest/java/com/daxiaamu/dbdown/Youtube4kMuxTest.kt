@@ -25,6 +25,29 @@ class Youtube4kMuxTest {
                 val output = File(dir, "fixture.mp4")
                 LosslessMuxer.merge(File(fixture,"video"), File(fixture,"audio"), output, File(fixture,"audio-codec").readText())
                 verify(output, 0)
+                if(InstrumentationRegistry.getArguments().getString("youtubeHdr") == "true") {
+                    fun probe(file: File): org.json.JSONObject {
+                        val result = com.arthenica.ffmpegkit.FFprobeKit.executeWithArguments(arrayOf("-v", "error", "-show_streams", "-of", "json", file.absolutePath))
+                        check(com.arthenica.ffmpegkit.ReturnCode.isSuccess(result.returnCode))
+                        return org.json.JSONObject(result.output)
+                    }
+                    val before = probe(File(fixture,"video")).getJSONArray("streams").getJSONObject(0)
+                    val streams = probe(output).getJSONArray("streams")
+                    val picture = (0 until streams.length()).map(streams::getJSONObject).first { it.optString("codec_type") == "video" }
+                    val audio = (0 until streams.length()).map(streams::getJSONObject).first { it.optString("codec_type") == "audio" }
+                    for(key in listOf("codec_name", "profile", "width", "height", "pix_fmt", "color_range", "color_space", "color_transfer", "color_primaries")) {
+                        assertTrue("Missing $key", before.has(key))
+                        assertEquals(key, before.get(key), picture.get(key))
+                    }
+                    assertEquals("smpte2084", picture.getString("color_transfer"))
+                    assertEquals("bt2020", picture.getString("color_primaries"))
+                    assertTrue(picture.getString("pix_fmt").contains("10"))
+                    assertEquals("opus", audio.getString("codec_name"))
+                    assertEquals(2, audio.getInt("channels"))
+                    InstrumentationRegistry.getInstrumentation().sendStatus(0, android.os.Bundle().apply {
+                        putString("stream", "HDR retained: ${picture.getString("pix_fmt")} ${picture.getString("color_transfer")} ${picture.getString("color_primaries")}; audio=${audio.getString("codec_name")}, channels=${audio.getInt("channels")}\n")
+                    })
+                }
                 return@runBlocking
             }
             val info = YoutubeResolver.resolve(Links.detect("b-Ag7meqZoU")!!) {}

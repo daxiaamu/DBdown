@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 9,
+  "policyRevision": 10,
   "maxForcedVersionCode": 0,
-  "reason": "0.6.15-beta.8: YouTube 4K, Live Photo compatibility and expired media URL recovery"
+  "reason": "Publish 0.6.15-beta.9: stream selection, aggregate resource sizes and stable home layout"
 }

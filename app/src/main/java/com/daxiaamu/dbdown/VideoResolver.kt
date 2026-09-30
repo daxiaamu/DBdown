@@ -1,5 +1,8 @@
 package com.daxiaamu.dbdown
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -11,7 +14,8 @@ data class VideoInfo(
     val source: VideoLink, val id: String, val title: String,
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
-    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false, val musicCandidates: List<String> = emptyList()
+    val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false, val musicCandidates: List<String> = emptyList(),
+    val videoPlan: SegmentPlan? = null, val audioPlan: SegmentPlan? = null, val audioUserAgent: String? = null
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
@@ -25,7 +29,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         WebAccounts.refresh(true)
         val actual = expand(link)
         when(actual.platform) {
-            Platform.YOUTUBE -> YoutubeResolver.resolve(actual, trackCall)
+            Platform.YOUTUBE -> YoutubeResolver.resolve(actual, { coroutineContext.ensureActive() }, trackCall = trackCall)
             Platform.BILI -> bili(actual)
             Platform.DOUYIN -> douyin(actual)
         }
@@ -121,7 +125,18 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         if(!page.contains("videoInfoRes")) {
             page = get("https://www.douyin.com/share/$kind/$id/", MOBILE, "https://www.douyin.com/")
         }
-        return resolveAlbumMusic(DouyinPage.parse(page, link))
+        val info = DouyinPage.parse(page, link)
+        if(info.images.isNotEmpty()) return resolveAlbumMusic(info)
+        // A usable share URL can still point to a lower-quality encode. Compare before downloading.
+        return try {
+            withTimeoutOrNull(12_000) {
+                DouyinPage.supplementVideo(page, DouyinDesktop.detail(id), info)
+            } ?: info
+        } catch(cancelled: CancellationException) {
+            throw cancelled
+        } catch(_: Exception) {
+            info
+        }
     }
     private fun resolveAlbumMusic(info: VideoInfo): VideoInfo {
         if(info.images.isEmpty() || info.music != null) return info

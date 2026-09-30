@@ -14,7 +14,19 @@ internal object DouyinPage {
             JSONObject().put("videoInfoRes", JSONObject().put("item_list", items))))
         return parse("<script>window._ROUTER_DATA=$router</script>", link).copy(separateAlbumMusic = true)
     }
-    fun desktopVideoUrls(raw: String, link: VideoLink): List<String> {
+    private data class VideoVariant(val pixels: Long, val bitrate: Long, val addresses: List<String>)
+    private val qualityOrder = compareByDescending<VideoVariant> { it.pixels }.thenByDescending { it.bitrate }
+
+    private fun mobileVariants(video: JSONObject): List<VideoVariant> {
+        val rates = video.optJSONArray("bit_rate")
+        return (0 until (rates?.length() ?: 0)).mapNotNull { rates!!.optJSONObject(it) }.map { rate ->
+            val stream = rate.optJSONObject("play_addr")
+            VideoVariant((stream?.optLong("width") ?: 0) * (stream?.optLong("height") ?: 0),
+                rate.optLong("bit_rate"), urls(stream?.optJSONArray("url_list")).map { it.replace("/playwm/", "/play/") })
+        }
+    }
+
+    private fun desktopVariants(raw: String, link: VideoLink): Pair<List<VideoVariant>, List<String>> {
         val item = JSONObject(raw)
         check(item.optString("awemeId") == link.key.removePrefix("dy:")) { "网页返回的作品与分享链接不一致" }
         check((item.optJSONArray("images")?.length() ?: 0) == 0) { "作品类型发生变化，请重试" }
@@ -23,14 +35,27 @@ internal object DouyinPage {
             validUrl(array!!.optJSONObject(it)?.optString("src").orEmpty())
         }
         val rates = video.optJSONArray("bitRateList")
-        val urls = (0 until (rates?.length() ?: 0)).map { rates!!.getJSONObject(it) }
+        val variants = (0 until (rates?.length() ?: 0)).map { rates!!.getJSONObject(it) }
             .filter { it.optString("format").let { format -> format.isBlank() || format == "mp4" } }
-            .sortedWith(compareByDescending<JSONObject> { it.optLong("width") * it.optLong("height") }
-                .thenByDescending { it.optLong("bitRate") })
-            .flatMap { addresses(it.optJSONArray("playAddr")) }
-        return (urls + addresses(video.optJSONArray("playAddr"))).distinct().also {
+            .map { VideoVariant(it.optLong("width") * it.optLong("height"), it.optLong("bitRate"), addresses(it.optJSONArray("playAddr"))) }
+        return variants to addresses(video.optJSONArray("playAddr"))
+    }
+
+    fun desktopVideoUrls(raw: String, link: VideoLink): List<String> {
+        val (variants, fallback) = desktopVariants(raw, link)
+        return (variants.sortedWith(qualityOrder).flatMap { it.addresses } + fallback).distinct().also {
             check(it.isNotEmpty()) { "网页没有返回可下载的视频地址" }
         }
+    }
+
+    /** Compare actual variants from both responses; top-level dimensions describe the upload, not the stream. */
+    fun supplementVideo(page: String, desktop: String, info: VideoInfo): VideoInfo {
+        if(info.images.isNotEmpty()) return info
+        val (web, fallback) = desktopVariants(desktop, info.source)
+        val mobile = mobileVariants(shareItem(page, info.source).getJSONObject("video"))
+        val candidates = ((mobile + web).sortedWith(qualityOrder).flatMap { it.addresses } +
+            listOf(info.video) + info.videoFallbacks + fallback).distinct()
+        return info.copy(video = candidates.first(), videoFallbacks = candidates.drop(1))
     }
 
     fun needsDesktopLive(raw: String, link: VideoLink): Boolean {
@@ -81,7 +106,7 @@ internal object DouyinPage {
         return parseSlides(mobile.toString(), link)
     }
 
-    fun parse(page: String, link: VideoLink): VideoInfo {
+    private fun shareItem(page: String, link: VideoLink): JSONObject {
         val raw = Regex("""window\._ROUTER_DATA\s*=\s*(.*?)</script>""", RegexOption.DOT_MATCHES_ALL)
             .find(page)?.groupValues?.get(1)?.trim()?.trimEnd(';')
             ?: error("抖音未返回作品数据，可能需要验证，请稍后重试")
@@ -93,6 +118,12 @@ internal object DouyinPage {
         val id = link.key.removePrefix("dy:")
         val item = (0 until items.length()).map { items.getJSONObject(it) }
             .firstOrNull { it.optString("aweme_id") == id } ?: error("平台返回的作品与分享链接不一致")
+        return item
+    }
+
+    fun parse(page: String, link: VideoLink): VideoInfo {
+        val item = shareItem(page, link)
+        val id = link.key.removePrefix("dy:")
         val images = item.optJSONArray("images")
         val title = item.optString("desc").ifBlank { "抖音作品 $id" }
         val play = item.optJSONObject("video")?.optJSONObject("play_addr")
@@ -135,16 +166,7 @@ internal object DouyinPage {
             raw.toHttpUrlOrNull()!!.newBuilder().setQueryParameter("ratio", "1080p").build().toString()
         }
         val video = item.optJSONObject("video")!!
-        val bitRates = video.optJSONArray("bit_rate")
-        val ranked = (0 until (bitRates?.length() ?: 0)).mapNotNull { bitRates?.optJSONObject(it) }
-            .sortedWith(compareByDescending<JSONObject> {
-                val stream = it.optJSONObject("play_addr")
-                (stream?.optLong("width") ?: 0L) * (stream?.optLong("height") ?: 0L)
-            }.thenByDescending { it.optLong("bit_rate") })
-            .flatMap { entry ->
-                val list = entry.optJSONObject("play_addr")?.optJSONArray("url_list")
-                (0 until (list?.length() ?: 0)).mapNotNull { validUrl(list!!.optString(it)) }
-            }.map { it.replace("/playwm/", "/play/") }
+        val ranked = mobileVariants(video).sortedWith(qualityOrder).flatMap { it.addresses }
         val candidates = (ranked + highQuality + alternates + originals).distinct()
         return VideoInfo(link, "dy:$id", title, candidates.first(), quality = "自动画质",
             referer = "https://www.douyin.com/", userAgent = VideoResolver.MOBILE, videoFallbacks = candidates.drop(1))

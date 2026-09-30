@@ -17,9 +17,18 @@ internal object LosslessMuxer {
         "-strict", "experimental", "-movflags", "+faststart", "-f", "mp4", output.absolutePath
     )
 
-    suspend fun merge(video: File, audio: File, output: File, expectedAudioCodec: String = "flac") = withContext(Dispatchers.IO) {
+    suspend fun merge(video: File, audio: File, output: File, expectedAudioCodec: String = "flac") =
+        run(arguments(video, audio, output), output, expectedAudioCodec)
+
+    suspend fun remux(input: File, output: File) = run(arrayOf(
+        "-nostdin", "-y", "-v", "error", "-i", input.absolutePath,
+        "-map", "0:v:0", "-map", "0:a:0", "-c", "copy", "-strict", "experimental",
+        "-movflags", "+faststart", "-f", "mp4", output.absolutePath
+    ), output, null)
+
+    private suspend fun run(arguments: Array<String>, output: File, expectedAudioCodec: String?) = withContext(Dispatchers.IO) {
         val complete = CompletableDeferred<FFmpegSession>()
-        val session = FFmpegKit.executeWithArgumentsAsync(arguments(video, audio, output)) { complete.complete(it) }
+        val session = FFmpegKit.executeWithArgumentsAsync(arguments) { complete.complete(it) }
         try {
             val finished = complete.await()
             check(ReturnCode.isSuccess(finished.returnCode) && output.length() > 0) { "原始音视频合并失败，请重试" }
@@ -29,7 +38,7 @@ internal object LosslessMuxer {
             val streams = JSONObject(probe.output).getJSONArray("streams")
             val types = (0 until streams.length()).map { streams.getJSONObject(it) }
             check(types.any { it.optString("codec_type") == "video" } &&
-                types.any { it.optString("codec_type") == "audio" && it.optString("codec_name") == expectedAudioCodec }) {
+                types.any { it.optString("codec_type") == "audio" && (expectedAudioCodec == null || it.optString("codec_name") == expectedAudioCodec) }) {
                 "合并结果没有保留原始音轨"
             }
         } finally {

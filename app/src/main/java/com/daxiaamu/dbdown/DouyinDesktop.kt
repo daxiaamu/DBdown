@@ -18,7 +18,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONTokener
 import kotlin.coroutines.resume
 
-/** Loads the official desktop detail when mobile sharing strips Live Photo clips. */
+/** Loads official desktop variants and Live Photo clips omitted by mobile sharing. */
 internal object DouyinDesktop {
     private lateinit var context: Context
     private val mutex = Mutex()
@@ -55,7 +55,7 @@ internal object DouyinDesktop {
                     var detail: String? = null
                     while(detail == null) {
                         delay(300)
-                        check(!rendererGone) { "实况资源网页加载失败，请重试" }
+                        check(!rendererGone) { "作品资源网页加载失败，请重试" }
                         val result = suspendCancellableCoroutine<String> { continuation ->
                             browser.evaluateJavascript("""(function(){var e=document.getElementById('RENDER_DATA');if(!e)return null;try{var d=JSON.parse(decodeURIComponent(e.textContent));var v=d.app&&d.app.videoDetail;return v&&v.awemeId==='$id'?JSON.stringify(v):null;}catch(e){return null;}})()""") {
                                 if(continuation.isActive) continuation.resume(it)
@@ -64,7 +64,7 @@ internal object DouyinDesktop {
                         detail = JSONTokener(result).nextValue() as? String
                     }
                     detail
-                } ?: error("未能获取完整实况资源，请在设置中打开抖音登录页完成验证后重试")
+                } ?: error("未能获取完整作品资源，请在设置中打开抖音登录页完成验证后重试")
             } finally {
                 browser.stopLoading()
                 browser.destroy()

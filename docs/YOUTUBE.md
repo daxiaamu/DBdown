@@ -4,7 +4,7 @@
 
 输入：watch、Shorts、youtu.be、embed、live 路径及完整 11 位 ID，统一为 watch URL 和 yt:ID 去重键。当前仅下载普通点播，直播明确提示暂不支持。
 
-画质：从渐进式 HTTP 资源选择最高像素数、帧率的视频，支持 AVC / HEVC / VP9 / AV1 和 MP4 / WebM。优先原始语言，再比较码率选择 AAC 或 Opus 独立音轨，使用 FFmpeg 原样封装为 MP4，不转码。登录网页解析采用相同候选范围。分段 DASH/HLS 清单仍不作为下载候选；实际最高画质取决于上游返回的可用资源。分辨率来自所选流，保存后使用文件实际尺寸复核。
+画质：汇总网页登录页面、NewPipe 原始 player 响应和补充官方客户端的候选，合并渐进式 HTTP、DASH、HLS 点播资源后再选择。最高像素数、帧率优先，同档位优先 HDR，再比较码率；不设置分辨率上限。独立音轨优先原始语言，再比较默认语言、声道数和码率，支持 AAC、Opus、AC-3、E-AC-3。无语言标记的单音轨不会仅因缺少默认标记而输给低码率音轨。先检查地址可用性，失败后继续比较其他候选。使用 FFmpeg 原样封装为 MP4，不转码；保存后复核实际尺寸。
 
 R8：保留 Rhino 动态执行与 Protobuf 反射字段；排除 Android 没有的 JSR-223 引擎。NewPipe 使用 Rhino 解释模式，不执行桌面 JIT。配置参考 https://github.com/TeamNewPipe/NewPipe/blob/dev/app/proguard-rules.pro 。
 
@@ -23,10 +23,41 @@ R8：保留 Rhino 动态执行与 Protobuf 反射字段；排除 Android 没有�
 
 设置中跳转 YouTube signin，再由官网转到 accounts.google.com。导航限定 HTTPS 官方域名；Google 账号域的 Cookie 不交给解析器，YouTube Cookie 也不发送到 googlevideo.com、googleapis.com 或其他平台。
 
-有 YouTube 会话 Cookie 时先解析已登录 watch 网页中的 ytInitialPlayerResponse，复用 NewPipe 签名和 n 参数处理；媒体地址先验证可用性，再进入现有下载/合并流程。网页资源不可用时尝试公开解析，登录不承诺解除平台挑战。
+解析 watch 网页中的 ytInitialPlayerResponse，有会话时同时更新登录状态；页面格式参与全体候选比较，不因页面返回 1080P 而提前停止。复用 NewPipe 的签名和 n 参数处理，额外支持清单 URL 路径中的 n 参数。补充客户端 API 和媒体请求不携带网页登录 Cookie。登录不承诺解除平台挑战。
 
 只有 ytcfg.set 配置中明确的 LOGGED_IN 布尔值才用于有效/失效判断，验证页、异常响应和网络错误不会误判过期。启动、设置页、网页登录完成及资源获取均会检查或更新状态；忽略提醒、重新登录、清除登录复用现有逻辑。
 
 验证：登录状态、域名隔离、已登录网页数据解析单元测试通过；手机已显示 Google 官方“继续使用 YouTube”的登录表单。实际账号登录及账号专属资源需要用户完成认证后验证，未宣称已通过。
 
 2026-09-30：b-Ag7meqZoU 实际解析得到 3840×2160，视频与独立音频均返回 HTTP 206。8T 使用该视频实际 4K 片段完成 MP4 合并及 Android 音视频轨道校验，FLAC 回归测试通过；完整视频在手机上的联网下载未完成验证。
+
+## HDR 与更高分辨率
+
+解析期间保留同一任务内 YouTube 官方 player 响应，按目标视频 ID 与可播放状态校验后，直接读取格式字段，避免 NewPipe 固定 itag 白名单漏掉 HDR 或未来格式。最高像素数、帧率优先，同档位优先 HDR，再比较码率；不设置 4K / 8K / 12K 上限。此策略不保证平台一定提供某个分辨率。
+
+音频正确识别 NewPipe 的 WEBMA_OPUS 枚举。原始播放器数据可识别 AAC、Opus、AC-3、E-AC-3，保存编码标签供合并校验；不把普通环绕声或标题中的 Dolby 字样当成 Atmos。HDR 与 Dolby Vision 也不等同。
+
+2026-09-30，样例 t2dhvFTktk4：官方原始响应本次返回最高 3840×2160 / 60fps，包含 VP9 Profile 2 HDR 与 SDR 两种流，音轨为 AAC / Opus 双声道，未返回 12K、Dolby Vision 或杜比音轨。修复后选中 2160p60 HDR 与 Opus；8T 实际片段合并测试确认输出保留 yuv420p10le、BT.2020、SMPTE ST 2084（PQ）及 Opus 双声道。验证针对实际片段，不代表完整长视频联网下载、12K 解码播放或 Atmos 元数据已验证。
+
+## 多客户端与分段下载（2026-09-30）
+
+- 补充 VISIONOS、IOS 和 WEB 客户端上下文；按视频 ID 和可播放状态过滤结果，实际能否得到资源由 YouTube 决定。配置来源为 yt-dlp 的官方源码： https://github.com/yt-dlp/yt-dlp/blob/master/yt_dlp/extractor/youtube/_base.py 。
+- 使用 Media3 解析静态、单 Period DASH（SegmentBase、SegmentList、SegmentTemplate/Timeline），以及带 ENDLIST 的连续 HLS 点播。支持初始化分片、字节范围、独立音轨、AES-128 明文密钥；不支持 DRM、直播、时间戳不连续的 HLS、初始化段切换或多 Period DASH。这些候选会跳过并尝试其他资源。
+- 媒体分片和密钥只从 HTTPS googlevideo.com 域获取，并验证重定向；清单先在 Java 层解析，FFmpeg 只处理本地文件。
+- 已完整写入的分片使用独立原子缓存；暂停后复用已完成分片，正在传输的分片重新下载。清单或签名地址变化时使用新缓存，避免把不同资源拼到一起。所有片段完整后才合并和发布。
+- 此实现不是 SABR 或 PO Token 生成器。客户端可能返回 LOGIN_REQUIRED、UNPLAYABLE，或只返回无法下载的格式；不会把这些格式当成下载成功，也不保证“获取所有格式”。
+
+本次 8T 实测：
+
+- b-Ag7meqZoU：选择 3840×2160 HLS 视频（75 个分片，含初始化段）和独立 Opus 音轨；实际前几个分片合并后保持 4K、BT.709 和 Opus。
+- t2dhvFTktk4：选择 3840×2160 / 60fps HDR HLS 视频（862 个分片，含初始化段）和独立 Opus；真实片段合并后保留 yuv420p10le、SMPTE ST 2084、BT.2020，未转码。
+- 上述验证是实际片段下载与合并，不是两个长视频的全量下载。合成短片另行覆盖从完整清单下载所有分片、完整时长和音视频轨道校验。
+- VISIONOS 在本次测试返回 LOGIN_REQUIRED，WEB 返回 UNPLAYABLE；IOS 状态 OK，但本次没有新增可用候选。实际选中资源来自 NewPipe 请求得到的原始数据和清单。本次没有得到更高分辨率或 Dolby Atmos，不能根据标题推断支持。
+
+## 网页 8K 对照（2026-09-30）
+
+QHBruxEyow0 的桌面 Chrome 画质菜单确实列出 4320p60（8K），播放器 adaptiveFormats 中存在 itag 571：7680×4320、60fps、AV1、BT.709。该响应只提供 serverAbrStreamingUrl，格式没有 url 或 signatureCipher；因此当前只支持 HTTP / DASH / HLS 的下载链路无法使用这条 SABR 8K 资源。这是当前 APP 的协议支持缺口，不能把已支持客户端返回的 4K 当作视频本身的最高分辨率。
+
+NPBiLXkhzFo 的此次桌面播放器响应最高为 3840×2160 / 60fps，包含 VP9 Profile 2 和 AV1 HDR；视频时长元数据为 610 秒。8T 选择 4K60 HDR HLS 与 Opus，完整下载验证在音频传输阶段发生网络读取超时，不能记为全片合并成功。
+
+QHBruxEyow0 的同一应用解析器复核实际选择 3840×2160 / 60fps（本次 SDR）和 Opus，视频、音频均返回 HTTP 206。网页的 8K60 SABR 资源尚未实现下载；本轮不宣称 8K 或该视频真机全片下载通过。

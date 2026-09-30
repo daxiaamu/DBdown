@@ -193,7 +193,10 @@ private val paths = mapOf(
                     if(page == 0) {
                     Box(Modifier.fillMaxSize().testTag("homePage").padding(top = topInset).padding(horizontal = 28.dp).padding(bottom = 120.dp), contentAlignment = Alignment.Center) {
                         Column(Modifier.widthIn(max = 540.dp).fillMaxWidth()) {
-                        HomeMessageCarousel(vm.homeMessages, pager.currentPage == 0 && !vm.inputVisible)
+                        // Reserve the carousel and its gap even before remote messages arrive.
+                        Column(Modifier.fillMaxWidth().height(60.dp)) {
+                            HomeMessageCarousel(vm.homeMessages, pager.currentPage == 0 && !vm.inputVisible)
+                        }
                         Surface(onClick = { vm.openInput() }, modifier = Modifier.widthIn(max = 540.dp).fillMaxWidth().height(66.dp),
                             shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface,
                             shadowElevation = 2.dp) {
