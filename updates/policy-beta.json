@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 13,
+  "policyRevision": 12,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.16-beta.3: restore in-app clipboard heads-up with parsing feedback"
+  "reason": "Publish 0.6.16-beta.2: hide clear action when the download list is empty"
 }
