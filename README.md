@@ -137,3 +137,7 @@ APK：app/build/outputs/apk/debug/app-debug.apk
 ### 首页轮播消息
 
 通过 [JSON 配置](config/home-messages.json) 控制首页轮播的总开关、切换时长、消息文字和可选链接。配置说明见 [首页轮播消息](docs/HOME_MESSAGES.md)。
+
+## 玻璃效果复刻
+
+底栏半透明胶囊、单层背景模糊、顶部渐变边界和跟手提示卡片的实现说明见 [Compose 玻璃效果复刻指南](docs/COMPOSE_GLASS.md)。
