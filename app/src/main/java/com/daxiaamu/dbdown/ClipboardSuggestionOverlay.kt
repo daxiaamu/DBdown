@@ -52,8 +52,11 @@ internal val avoidsSystemIsland: Boolean get() = Build.VERSION.SDK_INT >= 36 ||
             Column(Modifier.padding(start=18.dp,end=10.dp,top=10.dp,bottom=8.dp)) {
                 Row(verticalAlignment=Alignment.CenterVertically) {
                     prompt?.let { PlatformIcon(it.link.platform) }
-                    if(resolving) AppProgressSpinner(Modifier.padding(start=8.dp).size(16.dp))
-                    Text(title,style=MaterialTheme.typography.titleMedium,modifier=Modifier.weight(1f).padding(start=10.dp))
+                    Row(Modifier.weight(1f).padding(start=10.dp),verticalAlignment=Alignment.CenterVertically) {
+                        Text(title,style=MaterialTheme.typography.titleMedium,
+                            modifier=Modifier.weight(1f,fill=false),maxLines=1,overflow=TextOverflow.Ellipsis)
+                        if(resolving) AppProgressSpinner(Modifier.padding(start=8.dp).size(16.dp))
+                    }
                     IconButton(onClick=vm::dismissClipboard) { Glyph("close","忽略此提示") }
                 }
                 Text(text,maxLines=2,overflow=TextOverflow.Ellipsis,

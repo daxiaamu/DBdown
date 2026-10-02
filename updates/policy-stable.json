@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 14,
+  "policyRevision": 15,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.16: media specifications and improved clipboard experience"
+  "reason": "Publish 0.6.17: translucent navigation capsule and clearer clipboard feedback"
 }

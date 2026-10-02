@@ -132,9 +132,9 @@ private val paths = mapOf(
     Icon(vector, contentDescription = description, modifier = modifier.size(22.dp), tint = tint)
 }
 
-@Composable private fun appGlassStyle() = HazeStyle(
+@Composable internal fun appGlassStyle(tint: Color = MaterialTheme.colorScheme.background) = HazeStyle(
     backgroundColor = MaterialTheme.colorScheme.background,
-    tint = HazeTint(MaterialTheme.colorScheme.background.copy(alpha = 0.46f)),
+    tint = HazeTint(tint.copy(alpha = 0.46f)),
     blurRadius = 14.dp, noiseFactor = 0f
 )
 

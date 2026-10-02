@@ -1,6 +1,17 @@
 package com.daxiaamu.dbdown
 
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.hazeEffect
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -10,7 +21,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.MutatePriority
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.DragScope
 import androidx.compose.foundation.gestures.DraggableState
 import androidx.compose.foundation.gestures.Orientation
@@ -36,6 +46,10 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
+private val TabInset = 7.dp
+private val TabWidth = 118.dp
+private val TabHeight = 50.dp
+
 // Both gestures mutate the pager under its scroll mutex, so grabbing the capsule
 // interrupts a running page animation immediately instead of queuing behind it.
 private class CapsuleDragState(private val pager: PagerState, private val travelPx: Float) : DraggableState {
@@ -55,7 +69,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
     pager: PagerState, haze: HazeState, modifier: Modifier = Modifier, onSelect: (Int) -> Unit
 ) {
     val density = LocalDensity.current
-    val travel = with(density) { 118.dp.toPx() }
+    val travel = with(density) { TabWidth.toPx() }
     val flingThreshold = with(density) { 180.dp.toPx() }
     val dragState = remember(pager, travel) { CapsuleDragState(pager, travel) }
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
@@ -72,7 +86,7 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
         animationSpec = if(pressed) tween(100) else spring(dampingRatio = .8f, stiffness = 650f),
         label = "tabIslandPress"
     )
-    GlassPrompt(haze, modifier.width(250.dp).testTag("tabIsland")
+    Box(modifier.width(TabWidth * 2 + TabInset * 2).testTag("tabIsland")
         .pointerInput(Unit) {
             // Observe without consuming: capsule drags retain their own gesture arbitration.
             try {
@@ -81,8 +95,10 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
                 }
             } finally { pointerPressed = false }
         }
-        .graphicsLayer { scaleX = islandScale; scaleY = islandScale }, shape = CircleShape) {
-        Box(Modifier.padding(7.dp).height(50.dp).selectableGroup()
+        .graphicsLayer { scaleX = islandScale; scaleY = islandScale }
+        .shadow(4.dp,CircleShape).clip(CircleShape)) {
+        TabGlassBackdrop(haze,progress,rtl,Modifier.matchParentSize())
+        Box(Modifier.padding(TabInset).height(TabHeight).selectableGroup()
             .draggable(state = dragState, orientation = Orientation.Horizontal,
                 // Keep taps available during animation; capture only after horizontal touch slop.
                 reverseDirection = rtl, startDragImmediately = false,
@@ -94,8 +110,8 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
                     pager.animateScrollToPage(target)
                 })) {
             Box(Modifier.offset { IntOffset((progress * travel).roundToInt(), 0) }
-                .width(118.dp).fillMaxHeight().clip(CircleShape)
-                .background(colors.primaryContainer).testTag("tabCapsule"))
+                .width(TabWidth).fillMaxHeight().clip(CircleShape)
+                .testTag("tabCapsule"))
             Row(Modifier.fillMaxSize()) {
                 listOf("首页", "下载").forEachIndexed { index, label ->
                     val weight = if(index == 0) 1f - progress else progress
@@ -114,4 +130,26 @@ private class CapsuleDragState(private val pager: PagerState, private val travel
             }
         }
     }
+}
+
+/** One backdrop blur, then mutually exclusive tints. No glass layer exists beneath the capsule. */
+@Composable private fun TabGlassBackdrop(haze: HazeState, progress: Float, rtl: Boolean, modifier: Modifier) {
+    val colors=MaterialTheme.colorScheme
+    val capsuleTint=lerp(colors.primaryContainer,colors.primary,0.30f)
+    val cutout=remember { Path() }
+    val style=HazeStyle(backgroundColor=colors.background,tint=HazeTint(Color.Transparent),
+        blurRadius=26.dp,noiseFactor=0f)
+    Box(modifier.drawWithContent {
+        drawContent()
+        val inset=TabInset.roundToPx().toFloat()
+        val travel=TabWidth.toPx()
+        val offset=(progress*travel).roundToInt().toFloat()
+        val left=inset+if(rtl) travel-offset else offset
+        cutout.reset()
+        cutout.addRoundRect(RoundRect(left,inset,left+TabWidth.roundToPx(),size.height-inset,
+            CornerRadius((size.height-2*inset)/2)))
+        // Only flat tints are clipped, after Haze finishes drawing its render layer.
+        clipPath(cutout,ClipOp.Difference) { drawRect(colors.background.copy(alpha=0.46f)) }
+        drawPath(cutout,capsuleTint.copy(alpha=0.46f))
+    }.hazeEffect(haze,style=style))
 }
