@@ -4,6 +4,6 @@
   "intervalSeconds": 5,
   "messages": [
     { "id": "airport", "text": "机场推荐：白月光，稳定高速。", "url": "https://www.sibker.com/register?invite_code=2XQR1UUz" },
-    { "id": "platform", "text": "本软件支持youtube、抖音、B站" }
+    { "id": "platform", "text": "本软件支持 YouTube、抖音、B站和微博" }
   ]
 }
