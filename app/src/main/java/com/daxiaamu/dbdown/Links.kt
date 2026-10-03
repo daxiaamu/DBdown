@@ -3,8 +3,8 @@ package com.daxiaamu.dbdown
 import java.net.URI
 import java.net.URLDecoder
 
-enum class Platform(val label: String) { BILI("B 站"), DOUYIN("抖音"), YOUTUBE("YouTube");
-    companion object { val accountPlatforms = listOf(BILI, DOUYIN, YOUTUBE) }
+enum class Platform(val label: String) { BILI("B 站"), DOUYIN("抖音"), YOUTUBE("YouTube"), WEIBO("微博");
+    companion object { val accountPlatforms = listOf(BILI, DOUYIN, YOUTUBE, WEIBO) }
 }
 data class VideoLink(val platform: Platform, val url: String, val key: String, val part: Int = 1)
 
@@ -35,6 +35,7 @@ object Links {
         if (uri.scheme !in listOf("http", "https") || uri.userInfo != null || uri.port !in listOf(-1, 443, 80)) return null
         val host = uri.host?.lowercase() ?: return null
         val path = uri.path.orEmpty()
+        WeiboLinks.fromUri(uri)?.let { return it }
         if (host in setOf("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be", "www.youtu.be")) {
             val id = if(host.endsWith("youtu.be")) path.removePrefix("/").trimEnd('/')
             else if(path == "/watch") {

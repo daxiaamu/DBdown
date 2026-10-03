@@ -13,6 +13,11 @@ internal fun accountVerdict(platform: Platform, body: String): AccountStatus = r
     val json = JSONObject(body)
     val data = json.optJSONObject("data")
     when(platform) {
+        Platform.WEIBO -> when {
+            json.optInt("ok") == 1 && data?.opt("login") == true -> AccountStatus.VALID
+            json.optInt("ok") == 1 && data?.opt("login") == false -> AccountStatus.EXPIRED
+            else -> AccountStatus.UNKNOWN
+        }
         Platform.YOUTUBE -> AccountStatus.UNKNOWN
         Platform.BILI -> when {
             json.optInt("code", Int.MIN_VALUE) == -101 -> AccountStatus.EXPIRED

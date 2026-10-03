@@ -1,6 +1,6 @@
 {
   "channel": "beta",
-  "policyRevision": 12,
+  "policyRevision": 13,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.16-beta.2: hide clear action when the download list is empty"
+  "reason": "Publish 0.6.18-beta.1 with Weibo downloads and account login"
 }

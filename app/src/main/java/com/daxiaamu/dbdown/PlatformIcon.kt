@@ -33,6 +33,16 @@ import androidx.compose.ui.unit.dp
                     drawLine(pink, Offset(17f, 11f), Offset(17f, 15f), 2f, StrokeCap.Round)
                     drawLine(pink, Offset(10f, 17f), Offset(14f, 17f), 1.5f, StrokeCap.Round)
                 }
+                Platform.WEIBO -> {
+                    val red=Color(0xFFE6162D)
+                    drawOval(red,Offset(2f,8f),Size(19f,13f))
+                    drawOval(Color.White,Offset(5f,11f),Size(12f,8f))
+                    drawOval(ink,Offset(8f,12f),Size(6f,5f))
+                    drawCircle(Color.White,1.2f,Offset(10f,14f))
+                    drawArc(Color(0xFFFF8200),-100f,110f,false,Offset(13f,1f),Size(10f,10f),style=Stroke(2f,cap=StrokeCap.Round))
+                    drawArc(Color(0xFFFF8200),-100f,110f,false,Offset(15f,4f),Size(5f,5f),style=Stroke(1.6f,cap=StrokeCap.Round))
+                    drawLine(red,Offset(4f,10f),Offset(8f,5f),3f,StrokeCap.Round)
+                }
                 Platform.YOUTUBE -> {
                     drawRoundRect(Color(0xFFFF0033), Offset(1f, 4f), Size(22f, 16f), CornerRadius(5f))
                     drawPath(Path().apply { moveTo(10f, 8f); lineTo(16f, 12f); lineTo(10f, 16f); close() }, Color.White)

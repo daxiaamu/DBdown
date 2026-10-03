@@ -42,6 +42,7 @@ object WebAccounts {
         refresh()
     }
     private fun url(platform: Platform) = when(platform) {
+        Platform.WEIBO -> "https://m.weibo.cn/"
         Platform.BILI -> "https://www.bilibili.com/"
         Platform.DOUYIN -> "https://www.douyin.com/"
         Platform.YOUTUBE -> "https://www.youtube.com/"
@@ -60,6 +61,7 @@ object WebAccounts {
     }
     private fun hasSession(platform: Platform, raw: String): Boolean {
         val names = when(platform) {
+            Platform.WEIBO -> setOf("SUB")
             Platform.BILI -> setOf("SESSDATA")
             Platform.DOUYIN -> setOf("sessionid", "sessionid_ss", "sid_guard")
             Platform.YOUTUBE -> setOf("SAPISID", "__Secure-1PAPISID", "__Secure-3PAPISID", "SID")
@@ -82,11 +84,12 @@ object WebAccounts {
                         publish(platform, if(known) AccountStatus.EXPIRED else AccountStatus.SIGNED_OUT)
                         continue
                     }
-                    prefs.edit().putBoolean(platform.name + "_seen", true).apply()
+                    if(platform != Platform.WEIBO) prefs.edit().putBoolean(platform.name + "_seen", true).apply()
                     if(!check && statusState.value[platform] != null) continue
                     val wasExpired = prefs.getBoolean(platform.name + "_expired", false)
                     publish(platform, if(wasExpired) AccountStatus.EXPIRED else AccountStatus.CHECKING)
                     val endpoint = when(platform) {
+                        Platform.WEIBO -> "https://m.weibo.cn/api/config"
                         Platform.BILI -> "https://api.bilibili.com/x/web-interface/nav"
                         Platform.DOUYIN -> "https://www.douyin.com/aweme/v1/web/user/profile/self/?aid=6383&device_platform=webapp"
                         Platform.YOUTUBE -> "https://www.youtube.com/?hl=en"
@@ -102,7 +105,9 @@ object WebAccounts {
                     }.getOrDefault(AccountStatus.UNKNOWN)
                     // A WebView login may change credentials while the request is in flight.
                     if(manager.getCookie(url(platform)).orEmpty() == raw) {
-                        publish(platform, if(verdict == AccountStatus.UNKNOWN && wasExpired) AccountStatus.EXPIRED else verdict)
+                        if(verdict == AccountStatus.VALID) prefs.edit().putBoolean(platform.name + "_seen", true).apply()
+                        val effective=if(platform == Platform.WEIBO && verdict == AccountStatus.EXPIRED && !known) AccountStatus.SIGNED_OUT else verdict
+                        publish(platform, if(effective == AccountStatus.UNKNOWN && wasExpired) AccountStatus.EXPIRED else effective)
                     } else { recheck.set(true) }
                 }
                 if(check) lastCheck = now
@@ -158,7 +163,7 @@ object WebAccounts {
 }
 
 fun usesWebCookies(url: HttpUrl): Boolean = url.isHttps &&
-    listOf("bilibili.com", "douyin.com", "iesdouyin.com", "youtube.com").any {
+    listOf("bilibili.com", "douyin.com", "iesdouyin.com", "youtube.com", "weibo.com", "weibo.cn").any {
         url.host == it || url.host.endsWith(".$it")
     }
 

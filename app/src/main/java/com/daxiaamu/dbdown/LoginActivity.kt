@@ -24,6 +24,7 @@ class LoginActivity : ComponentActivity() {
         private set
     private val platform by lazy { Platform.accountPlatforms.firstOrNull { it.name == intent.getStringExtra("platform") } ?: Platform.BILI }
     private val startUrl get() = when(platform) {
+        Platform.WEIBO -> "https://passport.weibo.cn/signin/login?entry=mweibo&r=https%3A%2F%2Fm.weibo.cn%2F"
         Platform.BILI -> "https://passport.bilibili.com/h5-app/passport/login"
         Platform.DOUYIN -> "https://www.douyin.com/jingxuan"
         Platform.YOUTUBE -> "https://www.youtube.com/signin?next=%2F&hl=zh-CN"
@@ -105,12 +106,16 @@ class LoginActivity : ComponentActivity() {
             builtInZoomControls = true
             displayZoomControls = false
         }
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, false)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, platform == Platform.WEIBO)
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if(!request.isForMainFrame) return false
                 if(useDesktopIfRequired(view, request.url.toString())) return true
-                if(LoginPolicy.allowedNavigation(platform, request.url.toString())) return false
+                if(LoginPolicy.allowedNavigation(platform, request.url.toString())) {
+                    message = ""
+                    return false
+                }
+                if(BuildConfig.DEBUG) android.util.Log.d("DBDownLogin", "Blocked ${platform.name}: ${request.url.scheme}://${request.url.host}")
                 message = if(platform == Platform.YOUTUBE) "请在 Google 或 YouTube 官方网页内完成登录" else "请使用官网提供的短信或扫码登录方式"
                 return true
             }

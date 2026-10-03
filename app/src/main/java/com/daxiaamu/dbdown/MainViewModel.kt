@@ -99,11 +99,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onShare(text: String) {
         settings = false
         openInput(text)
-        if(Links.detect(text) == null) error = "没有识别到 B 站、抖音或 YouTube 视频"
+        if(Links.detect(text) == null) error = "没有识别到 B 站、抖音、YouTube 或微博 视频"
     }
     fun submit(): Boolean {
         val link = Links.detect(input)
-        if(link == null) { error = "请粘贴 B 站、抖音或 YouTube 链接，也支持分享文案、BV / AV 号和 YouTube 视频 ID"; return false }
+        if(link == null) { error = "请粘贴 B 站、抖音、YouTube 或微博 链接，也支持分享文案、BV / AV 号和 YouTube 视频 ID"; return false }
         val task = enqueue(link)
         if(!start(task.id)) { error = store.get(task.id)?.error; return false }
         inputVisible = false; tab = 1; settings = false

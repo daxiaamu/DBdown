@@ -43,7 +43,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
     }
     if(confirmClear) AlertDialog(onDismissRequest = { confirmClear = false },
         title = { Text("清除网页登录？") },
-        text = { Text("退出本应用内的 B 站、抖音和 YouTube 网页登录，清除本地网页 Cookie 和存储。手机上的官方应用不受影响。正在进行的下载不会重新解析资源。") },
+        text = { Text("退出本应用内的 B 站、抖音、YouTube 和微博 网页登录，清除本地网页 Cookie 和存储。手机上的官方应用不受影响。正在进行的下载不会重新解析资源。") },
         confirmButton = {
             TextButton(onClick = {
                 confirmClear = false; clearing = true
