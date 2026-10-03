@@ -6,7 +6,7 @@ object LoginPolicy {
         val parsed = url.toHttpUrlOrNull() ?: return false
         if(!parsed.isHttps || parsed.username.isNotEmpty() || parsed.password.isNotEmpty() || parsed.port != 443) return false
         if(platform == Platform.YOUTUBE) return parsed.host == "youtube.com" || parsed.host.endsWith(".youtube.com") ||
-            parsed.host in setOf("accounts.google.com", "myaccount.google.com", "www.google.com")
+            parsed.host in setOf("accounts.google.com", "myaccount.google.com", "www.google.com", "gds.google.com")
         if(platform == Platform.WEIBO) return listOf("weibo.com","weibo.cn").any {
             parsed.host == it || parsed.host.endsWith(".$it")
         } || parsed.host in setOf("login.sina.com.cn", "passport.sina.cn")

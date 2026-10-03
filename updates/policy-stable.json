@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 15,
+  "policyRevision": 16,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.17: translucent navigation capsule and clearer clipboard feedback"
+  "reason": "Publish 0.6.18: Weibo support and clearer account login completion"
 }

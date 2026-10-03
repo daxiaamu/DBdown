@@ -10,6 +10,13 @@ class LoginPolicyTest {
         assertFalse(LoginPolicy.allowedNavigation(Platform.DOUYIN, "intent://login"))
         assertFalse(LoginPolicy.allowedNavigation(Platform.DOUYIN, "http://www.douyin.com/"))
     }
+    @Test fun youtubeLoginAllowsGoogleIntermediatePageOnlyOnTrustedOrigin() {
+        assertTrue(LoginPolicy.allowedNavigation(Platform.YOUTUBE, "https://gds.google.com/web/landing?continue=https%3A%2F%2Fwww.youtube.com"))
+        for(url in listOf("https://gds.google.com.evil.com/", "https://gds.google.com@evil.com/",
+            "http://gds.google.com/", "https://gds.google.com:8080/", "https://unrelated.google.com/"))
+            assertFalse(LoginPolicy.allowedNavigation(Platform.YOUTUBE, url))
+        assertFalse(LoginPolicy.allowedNavigation(Platform.BILI, "https://gds.google.com/"))
+    }
     @Test fun weiboQrLoginAllowsSinaCallbackWithoutOpeningOtherOrigins() {
         assertTrue(LoginPolicy.allowedNavigation(Platform.WEIBO, "https://passport.sina.cn/sso/crossdomain?ticket=fixture"))
         for(url in listOf("https://passport.sina.cn.evil.com/", "https://passport.sina.cn@evil.com/",

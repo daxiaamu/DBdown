@@ -71,6 +71,7 @@ class LoginActivity : ComponentActivity() {
     }
     @Composable private fun LoginToolbar() {
         val statuses by WebAccounts.statuses.collectAsState()
+        val signedIn = statuses[platform] == AccountStatus.VALID
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             TextButton(onClick = { finish() }) { Text("返回") }
             Text(if(platform == Platform.BILI) "哔哩哔哩登录" else "${platform.label}登录",
@@ -80,12 +81,12 @@ class LoginActivity : ComponentActivity() {
         }
         Text(host, modifier = Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelSmall)
         Box(Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text(if(message.isNotEmpty()) message
+            Text(if(signedIn) "已登录，点击右上角「完成」返回"
+                else if(message.isNotEmpty()) message
                 else if(statuses[platform] == AccountStatus.EXPIRED) "登录已失效，请在官网重新登录"
-                else if(statuses[platform] == AccountStatus.VALID) "已登录"
                 else "请在官网完成登录，然后点右上角「完成」",
                 style = MaterialTheme.typography.bodySmall,
-                color = if(message.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = if(message.isNotEmpty() && !signedIn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     @SuppressLint("SetJavaScriptEnabled")
@@ -115,8 +116,12 @@ class LoginActivity : ComponentActivity() {
                     message = ""
                     return false
                 }
-                if(BuildConfig.DEBUG) android.util.Log.d("DBDownLogin", "Blocked ${platform.name}: ${request.url.scheme}://${request.url.host}")
-                message = if(platform == Platform.YOUTUBE) "请在 Google 或 YouTube 官方网页内完成登录" else "请使用官网提供的短信或扫码登录方式"
+                // Only show the origin: login callbacks can contain credentials in their path/query.
+                val origin = "${request.url.scheme.orEmpty()}://${request.url.host.orEmpty()}".take(120)
+                message = "已拦截登录页跳转：$origin"
+                // A completed login can attempt an app deep link without another page-finished event.
+                // Let the official account endpoint decide success, not the navigation outcome.
+                WebAccounts.flush()
                 return true
             }
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
