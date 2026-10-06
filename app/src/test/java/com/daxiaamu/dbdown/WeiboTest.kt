@@ -42,9 +42,9 @@ class WeiboTest {
         assertEquals("图片 &更多",info.title)
         assertThrows(IllegalStateException::class.java) { WeiboMedia.parse(JSONObject("""{"idstr":"4189191225395228"}"""),link) }
     }
-    @Test fun loginAndCookiesStayOnOfficialOrigins() {
-        for(url in listOf("https://passport.weibo.cn/signin/login","https://passport.weibo.com/sso/signin","https://login.sina.com.cn/sso/login.php")) assertTrue(LoginPolicy.allowedNavigation(Platform.WEIBO,url))
-        for(url in listOf("http://weibo.com/","https://weibo.com.evil.com/","https://weibo.com@evil.com/","https://example.com/")) assertFalse(LoginPolicy.allowedNavigation(Platform.WEIBO,url))
+    @Test fun webLoginNavigationAndDownloadCookiesHaveSeparateScopes() {
+        for(url in listOf("https://passport.weibo.cn/signin/login","https://passport.weibo.com/sso/signin","https://login.sina.com.cn/sso/login.php")) assertTrue(LoginPolicy.allowedNavigation(url))
+        for(url in listOf("http://weibo.com/","https://weibo.com@evil.com/")) assertFalse(LoginPolicy.allowedNavigation(url))
         assertTrue(usesWebCookies("https://weibo.com/ajax/statuses/show".toHttpUrl()))
         assertFalse(usesWebCookies("https://f.video.weibocdn.com/a.mp4".toHttpUrl()))
         assertEquals(AccountStatus.VALID,accountVerdict(Platform.WEIBO,"""{"ok":1,"data":{"login":true}}"""))

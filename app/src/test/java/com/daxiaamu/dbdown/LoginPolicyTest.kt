@@ -3,26 +3,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LoginPolicyTest {
-    @Test fun loginNavigationDoesNotEscapeTheChosenOfficialPlatform() {
-        assertTrue(LoginPolicy.allowedNavigation(Platform.BILI, "https://passport.bilibili.com/h5-app/passport/login"))
-        assertFalse(LoginPolicy.allowedNavigation(Platform.BILI, "https://passport.bilibili.com.attacker.example/login"))
-        assertFalse(LoginPolicy.allowedNavigation(Platform.BILI, "https://www.douyin.com/"))
-        assertFalse(LoginPolicy.allowedNavigation(Platform.DOUYIN, "intent://login"))
-        assertFalse(LoginPolicy.allowedNavigation(Platform.DOUYIN, "http://www.douyin.com/"))
+    @Test fun httpsNavigationHasNoPlatformDomainAllowlist() {
+        listOf("https://passport.bilibili.com/", "https://gds.google.com/web/landing",
+            "https://passport.krcom.cn/sso/crossdomain?action=logout", "https://new-login.example.org/",
+            "https://new-login.example.org:8443/").forEach { assertTrue(it, LoginPolicy.allowedNavigation(it)) }
     }
-    @Test fun youtubeLoginAllowsGoogleIntermediatePageOnlyOnTrustedOrigin() {
-        assertTrue(LoginPolicy.allowedNavigation(Platform.YOUTUBE, "https://gds.google.com/web/landing?continue=https%3A%2F%2Fwww.youtube.com"))
-        for(url in listOf("https://gds.google.com.evil.com/", "https://gds.google.com@evil.com/",
-            "http://gds.google.com/", "https://gds.google.com:8080/", "https://unrelated.google.com/"))
-            assertFalse(LoginPolicy.allowedNavigation(Platform.YOUTUBE, url))
-        assertFalse(LoginPolicy.allowedNavigation(Platform.BILI, "https://gds.google.com/"))
-    }
-    @Test fun weiboQrLoginAllowsSinaCallbackWithoutOpeningOtherOrigins() {
-        assertTrue(LoginPolicy.allowedNavigation(Platform.WEIBO, "https://passport.sina.cn/sso/crossdomain?ticket=fixture"))
-        for(url in listOf("https://passport.sina.cn.evil.com/", "https://passport.sina.cn@evil.com/",
-            "https://evil.sina.cn/", "http://passport.sina.cn/", "https://passport.sina.cn:8080/"))
-            assertFalse(LoginPolicy.allowedNavigation(Platform.WEIBO, url))
-        assertFalse(LoginPolicy.allowedNavigation(Platform.BILI, "https://passport.sina.cn/"))
+    @Test fun nonWebSchemesAndCredentialBearingUrlsRemainSeparate() {
+        listOf("http://example.org/", "intent://login", "bilibili://home", "javascript:alert(1)",
+            "file:///sdcard/test", "https://user:password@example.org/", "not a url")
+            .forEach { assertFalse(it, LoginPolicy.allowedNavigation(it)) }
     }
     @Test fun loginMediaFilterLeavesCaptchaAndLoginResourcesAlone() {
         assertTrue(LoginPolicy.isFeedMedia("https://v3.douyinvod.com/video.mp4"))

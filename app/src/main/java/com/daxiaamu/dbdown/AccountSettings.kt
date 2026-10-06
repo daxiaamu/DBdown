@@ -27,7 +27,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
                             style = MaterialTheme.typography.bodySmall, color = if(statuses[platform] == AccountStatus.EXPIRED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(enabled = !clearing, onClick = {
-                        context.startActivity(Intent(context, LoginActivity::class.java).putExtra("platform", platform.name))
+                        context.startActivity(Intent(context, LoginActivity::class.java).putExtra("platform", platform.name)
+                            .putExtra("manage_account", statuses[platform] == AccountStatus.VALID))
                     }) { Text(when(statuses[platform]) { AccountStatus.EXPIRED -> "重新登录"; AccountStatus.VALID -> "管理登录"; else -> "网页登录" }) }
                 }
                 if(platform != Platform.accountPlatforms.last()) HorizontalDivider()

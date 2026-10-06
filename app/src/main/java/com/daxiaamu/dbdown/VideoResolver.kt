@@ -125,7 +125,8 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
             page = get("https://www.douyin.com/share/$kind/$id/", MOBILE, "https://www.douyin.com/")
         }
         val info = DouyinPage.parse(page, link)
-        if(info.images.isNotEmpty()) return resolveAlbumMusic(info)
+        if(info.images.isNotEmpty()) return resolveAlbumMusic(
+            DouyinPage.supplementNote(page, DouyinDesktop.detail(id), link))
         // A usable share URL can still point to a lower-quality encode. Compare before downloading.
         val enriched = try {
             withTimeoutOrNull(12_000) {

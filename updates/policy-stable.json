@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 16,
+  "policyRevision": 17,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.18: Weibo support and clearer account login completion"
+  "reason": "Publish 0.6.19: restore Live Photos in image posts and simplify web login redirects"
 }

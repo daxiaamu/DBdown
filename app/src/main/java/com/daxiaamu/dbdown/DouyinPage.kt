@@ -76,6 +76,14 @@ internal object DouyinPage {
         }
     }
 
+    /** Note sharing can omit both the Live Photo flag and clip; verify every album against the web item. */
+    fun supplementNote(page: String, desktop: String, link: VideoLink): VideoInfo {
+        val raw = JSONObject().put("status_code", 0)
+            .put("aweme_details", JSONArray().put(shareItem(page, link)))
+        val info = supplementDesktop(raw.toString(), desktop, link)
+        return info.copy(separateAlbumMusic = info.imageVideos.any { it != null })
+    }
+
     fun supplementDesktop(raw: String, desktop: String, link: VideoLink): VideoInfo {
         val mobile = JSONObject(raw)
         val items = mobile.getJSONArray("aweme_details")

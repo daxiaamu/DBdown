@@ -23,8 +23,10 @@ class LoginActivity : ComponentActivity() {
     internal var browser: WebView? = null
         private set
     private val platform by lazy { Platform.accountPlatforms.firstOrNull { it.name == intent.getStringExtra("platform") } ?: Platform.BILI }
+    private var enteredSignedIn = false
     private val startUrl get() = when(platform) {
-        Platform.WEIBO -> "https://passport.weibo.cn/signin/login?entry=mweibo&r=https%3A%2F%2Fm.weibo.cn%2F"
+        Platform.WEIBO -> if(enteredSignedIn) "https://m.weibo.cn/"
+            else "https://passport.weibo.cn/signin/login?entry=mweibo&r=https%3A%2F%2Fm.weibo.cn%2F"
         Platform.BILI -> "https://passport.bilibili.com/h5-app/passport/login"
         Platform.DOUYIN -> "https://www.douyin.com/jingxuan"
         Platform.YOUTUBE -> "https://www.youtube.com/signin?next=%2F&hl=zh-CN"
@@ -36,6 +38,8 @@ class LoginActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        enteredSignedIn = savedInstanceState?.getBoolean("entered_signed_in")
+            ?: (intent.getBooleanExtra("manage_account", false) || WebAccounts.statuses.value[platform] == AccountStatus.VALID)
         lifecycle.addObserver(ForegroundClipboardObserver(this, {
             getSharedPreferences("settings", 0).getBoolean("clipboard", true)
         }) { text -> clipboardModel.inspectClipboard(text) })
@@ -45,6 +49,15 @@ class LoginActivity : ComponentActivity() {
         browser = view
         setContent {
             DownloaderTheme {
+                val statuses by WebAccounts.statuses.collectAsState()
+                LaunchedEffect(statuses[platform]) {
+                    // Only complete a new login after the official account check succeeds.
+                    // An already signed-in management visit must stay open.
+                    if(platform == Platform.WEIBO && !enteredSignedIn && statuses[platform] == AccountStatus.VALID) {
+                        WebAccounts.flush()
+                        finish()
+                    }
+                }
                 val haze=remember { HazeState() }
                 BackHandler { finish() }
                 Box(Modifier.fillMaxSize()) {
@@ -112,7 +125,7 @@ class LoginActivity : ComponentActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if(!request.isForMainFrame) return false
                 if(useDesktopIfRequired(view, request.url.toString())) return true
-                if(LoginPolicy.allowedNavigation(platform, request.url.toString())) {
+                if(LoginPolicy.allowedNavigation(request.url.toString())) {
                     message = ""
                     return false
                 }
@@ -181,6 +194,7 @@ class LoginActivity : ComponentActivity() {
     }
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("login_platform", platform.name)
+        outState.putBoolean("entered_signed_in", enteredSignedIn)
         outState.putBoolean("desktop_fallback", desktopFallback)
         browser?.saveState(outState)
         super.onSaveInstanceState(outState)

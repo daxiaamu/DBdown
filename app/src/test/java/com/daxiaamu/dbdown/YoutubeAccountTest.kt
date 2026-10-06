@@ -16,10 +16,9 @@ class YoutubeAccountTest {
         }
     }
     @Test fun googleNavigationAndCookieScopesStaySeparate() {
-        assertTrue(LoginPolicy.allowedNavigation(Platform.YOUTUBE,"https://accounts.google.com/ServiceLogin"))
-        assertTrue(LoginPolicy.allowedNavigation(Platform.YOUTUBE,"https://m.youtube.com/"))
-        listOf("https://accounts.google.com.attacker.com/", "http://youtube.com/", "https://evil@youtube.com/",
-            "https://www.youtube.com:8443/").forEach { assertFalse(LoginPolicy.allowedNavigation(Platform.YOUTUBE,it)) }
+        assertTrue(LoginPolicy.allowedNavigation("https://accounts.google.com/ServiceLogin"))
+        assertTrue(LoginPolicy.allowedNavigation("https://m.youtube.com/"))
+        listOf("http://youtube.com/", "https://evil@youtube.com/").forEach { assertFalse(LoginPolicy.allowedNavigation(it)) }
         assertTrue(usesWebCookies("https://www.youtube.com/watch".toHttpUrl()))
         listOf("https://accounts.google.com/", "https://youtube.googleapis.com/", "https://r1.googlevideo.com/",
             "https://youtube.com.evil.com/").forEach { assertFalse(usesWebCookies(it.toHttpUrl())) }
