@@ -18,7 +18,7 @@
   <a href="https://github.com/daxiaamu/DBdown/actions/workflows/update-metadata.yml"><img src="https://github.com/daxiaamu/DBdown/actions/workflows/update-metadata.yml/badge.svg" alt="更新清单生成状态" /></a>
 </p>
 
-> 机场推荐：[白月光，稳定高速](https://www.sibker.com/register?invite_code=2XQR1UUz)
+> 机场推荐：[白月光，稳定高速](https://www.sibker.com/register?invite_code=Nn2kuFea)
 
 ## 许可
 

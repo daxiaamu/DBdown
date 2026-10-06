@@ -71,6 +71,6 @@ GitHub API 不可用时，使用同一仓库的 GitHub 官方 Raw 地址作为�
 构建签名从环境变量 DBDOWN_KEYSTORE、DBDOWN_STORE_PASSWORD、DBDOWN_KEY_ALIAS、DBDOWN_KEY_PASSWORD 注入，仓库不含私钥。未提供时 release 输出未签名 APK，不可直接发布。
 
 
-更新日志沿用项目推荐：机场推荐：[白月光，稳定高速](https://www.sibker.com/register?invite_code=2XQR1UUz)
+更新日志沿用项目推荐：机场推荐：[白月光，稳定高速](https://www.sibker.com/register?invite_code=Nn2kuFea)
 
 仅修订更新日志时，可递增 policyRevision 并针对现有 tag 手动运行 Actions；相同 versionCode 必须保持 APK 版本名称、SHA-256 和体积完全一致。不得替换已经发布的同版本 APK，旧清单仍保持不可变。

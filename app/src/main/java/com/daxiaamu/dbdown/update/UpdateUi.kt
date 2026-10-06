@@ -59,17 +59,46 @@ import java.util.Locale
                 }
             }
             HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
-            Surface(onClick = {
-                runCatching {
-                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW,
-                        android.net.Uri.parse("https://github.com/${com.daxiaamu.dbdown.BuildConfig.UPDATE_REPOSITORY}")))
-                }.onFailure { Toast.makeText(context, "没有可以打开项目页的应用", Toast.LENGTH_SHORT).show() }
-            }, modifier = Modifier.testTag("openSource")) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("开放源代码", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    com.daxiaamu.dbdown.Glyph("arrow")
+            AboutLinkRow("开放源代码", "https://github.com/${com.daxiaamu.dbdown.BuildConfig.UPDATE_REPOSITORY}", "openSource")
+            HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            authorLinks.forEachIndexed { index, link ->
+                AboutLinkRow(link.title, link.url, "author_${link.id}", link.description)
+                if (index < authorLinks.lastIndex) {
+                    HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant)
                 }
             }
+        }
+    }
+}
+
+private data class AuthorLink(val id: String, val title: String, val url: String, val description: String? = null)
+
+private val authorLinks = listOf(
+    AuthorLink("blog", "大侠阿木博客", "https://www.daxiaamu.com/"),
+    AuthorLink("coolapk", "酷安", "https://coolapk.com/u/%E5%A4%A7%E4%BE%A0%E9%98%BF%E6%9C%A8", "@大侠阿木"),
+    AuthorLink("weibo", "微博", "https://weibo.com/daxiaamu", "@大侠阿木"),
+    AuthorLink("douyin", "抖音", "https://v.douyin.com/GYj11bL8vwE/", "@大侠阿木"),
+    AuthorLink("bilibili", "B站", "https://space.bilibili.com/317357319", "@大侠阿木"),
+    AuthorLink("github", "Github", "https://github.com/daxiaamu", "@daxiaamu"),
+    AuthorLink("afdian", "爱发电", "https://ifdian.net/a/daxiaamu", "@大侠阿木"),
+)
+
+@Composable private fun AboutLinkRow(title: String, url: String, tag: String, description: String? = null) {
+    val context = LocalContext.current
+    Surface(onClick = {
+        runCatching {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        }.onFailure { Toast.makeText(context, "没有可以打开链接的应用", Toast.LENGTH_SHORT).show() }
+    }, modifier = Modifier.testTag(tag)) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                description?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            com.daxiaamu.dbdown.Glyph("arrow")
         }
     }
 }
