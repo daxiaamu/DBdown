@@ -48,6 +48,21 @@ class LinksTest {
             "www.douyin.com/jingxuan?modal_id=%37${id.drop(1)}#detail"
         ).forEach { assertEquals(it, "dy:$id", Links.detect(it)?.key) }
     }
+    @Test fun searchVideoLinkUsesOpenedModalRatherThanPreviousVideo() {
+        val url = "https://www.douyin.com/video/7640082702566155940/search/One%20little%20two%20little%20three%20little?aid=fe7af406-4698-44d4-83fd-16f10b4cbc1a&modal_id=7551638467022408969&type=general"
+        val expected = Links.detect("https://www.douyin.com/video/7551638467022408969")
+        assertEquals(expected, Links.fromUrl(url))
+        assertEquals(expected, Links.detect("分享作品 [$url]"))
+        assertEquals(expected, Links.detect("https://www.douyin.com/search/One%20little?modal_id=7551638467022408969"))
+        assertEquals(expected, Links.detect("https://www.douyin.com/video/7640082702566155940?modal_id=7551638467022408969"))
+    }
+    @Test fun searchModalMustIdentifyOneValidWork() {
+        val prefix = "https://www.douyin.com/video/7640082702566155940/search/test?"
+        listOf("", "modal_id=", "modal_id=bad", "modal_id=7551638467022408969&modal_id=7640082702566155940")
+            .forEach { assertNull(Links.detect(prefix + it)) }
+        assertNull(Links.detect("https://www.douyin.com/user/test?modal_id=7551638467022408969"))
+        assertNull(Links.detect("https://www.douyin.com.evil.com/search/test?modal_id=7551638467022408969"))
+    }
     @Test fun rejectsInvalidOrAmbiguousModalLinks() {
         val prefix = "https://www.douyin.com/jingxuan?"
         listOf("", "modal_id=", "modal_id=12", "modal_id=-7678889454471351592",

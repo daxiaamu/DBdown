@@ -16,7 +16,8 @@ import javax.crypto.spec.SecretKeySpec
 
 /** Completed fragments are atomic cache entries. Pause resumes at the next unfinished fragment. */
 internal class SegmentTransfer(client: OkHttpClient, private val track: (Call) -> Unit,
-    private val allowed: (String) -> Boolean = ::youtubeMediaUrl) {
+    private val allowed: (String) -> Boolean = ::youtubeMediaUrl,
+    private val nanoTime: () -> Long = System::nanoTime) {
     private val client = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).addNetworkInterceptor { chain ->
         require(allowed(chain.request().url.toString())) { "Unsupported segment redirect" }
         chain.proceed(chain.request())
@@ -36,14 +37,19 @@ internal class SegmentTransfer(client: OkHttpClient, private val track: (Call) -
         val keys = mutableMapOf<String,ByteArray>()
         val total = if(plan.segments.all { it.length > 0 && it.keyUrl == null }) plan.segments.sumOf { it.length } else -1L
         var written = 0L
+        var receivedBytes = 0L
         var lastBytes = 0L
-        var lastTick = System.nanoTime()
+        var lastTick = nanoTime()
+        var speed = 0L
         fun report(force: Boolean = false) {
-            val now = System.nanoTime()
-            if(force || now - lastTick >= 400_000_000L) {
-                val speed = if(force) 0 else ((written-lastBytes)*1_000_000_000.0/(now-lastTick)).toLong()
-                progress(written,total,speed); lastBytes=written; lastTick=now
+            val now = nanoTime()
+            val sampled = now - lastTick >= 400_000_000L
+            if(sampled) {
+                // Keep one sampling window across fragments; cached fragments are not network traffic.
+                speed = ((receivedBytes-lastBytes)*1_000_000_000.0/(now-lastTick)).toLong()
+                lastBytes = receivedBytes; lastTick = now
             }
+            if(force || sampled) progress(written,total,speed)
         }
         for((index,part) in plan.segments.withIndex()) {
             context.ensureActive()
@@ -88,7 +94,7 @@ internal class SegmentTransfer(client: OkHttpClient, private val track: (Call) -
                         while(true) {
                             context.ensureActive()
                             val count=input.read(buffer); if(count < 0) break
-                            out.write(buffer,0,count); received+=count; written+=count; report()
+                            out.write(buffer,0,count); received+=count; written+=count; receivedBytes+=count; report()
                         }
                     }
                 }

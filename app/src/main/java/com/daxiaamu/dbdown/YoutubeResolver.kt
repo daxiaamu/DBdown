@@ -122,14 +122,21 @@ internal object YoutubeResolver {
             }
             check(requested?.audio == null || eligible.none { it.video && it.audio }) { "视频自带音轨，不能选择额外音轨" }
             val selection=youtubeSelectStreams(eligible,allowSilent=requested != null && requested.audio == null) { stream -> attempt {
-                val ready=manifests.prepare(stream)
+                var ready=manifests.prepare(stream)
                 val probes=ready.plan?.segments?.let { listOf(it.first(),it.last()).distinct() }
                     ?: listOf(MediaSegment(ready.url))
                 for(part in probes) {
                     check(youtubeMediaUrl(part.url)); active()
                     media.newCall(Request.Builder().url(part.url).header("User-Agent",ready.userAgent)
                         .header("Referer",link.url).header("Range","bytes=${part.start}-${part.start}").build())
-                        .also(register).execute().use { check(it.code==200 || it.code==206) }
+                        .also(register).execute().use { response ->
+                            check(response.code==200 || response.code==206)
+                            if(ready.protocol == YoutubeProtocol.HTTP && ready.plan == null && response.code == 206) {
+                                youtubeHttpRangePlan(ready.url, response.header("Content-Range"))?.let { plan ->
+                                    ready = ready.copy(plan = plan)
+                                }
+                            }
+                        }
                 }
                 ready
             } }

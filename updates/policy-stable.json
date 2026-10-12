@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 17,
+  "policyRevision": 18,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.19: restore Live Photos in image posts and simplify web login redirects"
+  "reason": "Publish 0.6.20: improve YouTube download speed and support Douyin search links"
 }

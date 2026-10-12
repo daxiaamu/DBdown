@@ -16,6 +16,23 @@ import javax.crypto.spec.SecretKeySpec
 class SegmentTransferTest {
     @get:Rule val temp=TemporaryFolder()
     private fun transfer()=SegmentTransfer(OkHttpClient(),{}, { (it.startsWith("http://localhost:") || it.startsWith("http://127.0.0.1:")) && !it.endsWith("/forbidden") })
+    @Test fun speedSamplingContinuesAcrossFastFragments() = runBlocking {
+        MockWebServer().use { server ->
+            repeat(5) { server.enqueue(MockResponse().setBody("abc")) }
+            val url = server.url("/fragment").toString()
+            var now = 0L
+            val transfer = SegmentTransfer(OkHttpClient(), {}, { it.startsWith(server.url("/").toString()) },
+                nanoTime = { now.also { now += 100_000_000L } })
+            val reports = mutableListOf<Pair<Long, Long>>()
+            transfer.download(SegmentPlan(List(5) { MediaSegment(url) }, "fast"), temp.newFile(), "test", url) { bytes, _, speed ->
+                reports += bytes to speed
+            }
+            assertTrue("Short fragments must accumulate a speed sample", reports.any { it.second > 0 })
+            val firstMeasured = reports.indexOfFirst { it.second > 0 }
+            assertTrue("Fragment completion must preserve speed", reports.drop(firstMeasured).dropLast(1).all { it.second > 0 })
+            assertEquals(15L to 0L, reports.last())
+        }
+    }
     @Test fun assemblesRangesAndReportsFinalBytes() = runBlocking {
         MockWebServer().use { s ->
             s.enqueue(MockResponse().setResponseCode(206).setHeader("Content-Range","bytes 0-2/6").setBody("abc"))

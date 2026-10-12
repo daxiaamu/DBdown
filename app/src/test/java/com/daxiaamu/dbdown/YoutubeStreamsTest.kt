@@ -4,6 +4,16 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class YoutubeStreamsTest {
+    @Test fun boundedHttpPlanCoversEntireTrackWithoutOverlaps() {
+        val size = 2 * 1024 * 1024L + 17
+        val plan = youtubeHttpRangePlan("https://media.googlevideo.com/audio", "bytes 0-0/$size")!!
+        assertEquals(listOf(0L, 1024 * 1024L, 2 * 1024 * 1024L), plan.segments.map { it.start })
+        assertEquals(listOf(1024 * 1024L, 1024 * 1024L, 17L), plan.segments.map { it.length })
+        assertEquals(size, plan.segments.sumOf { it.length })
+        listOf(null, "bytes 0-0/*", "bytes 1-1/100", "bytes 0-0/0", "bytes 0-0/999999999999999999999")
+            .forEach { assertNull(youtubeHttpRangePlan("https://media.googlevideo.com/audio", it)) }
+    }
+
     private fun video(id: String, height: Int, hdr: Boolean = false) = YoutubeStream("https://r.googlevideo.com/$id",true,false,"video/mp4; av01",height*16/9,height,60f,hdr,formatId=id)
     private fun audio(id: String, bitrate: Long, original: Boolean = true) = YoutubeStream("https://r.googlevideo.com/$id",false,true,"audio/webm; opus",bitrate=bitrate,original=original,formatId=id)
     @Test fun combinesLoggedInAndOtherClientsWithoutResolutionCap() {

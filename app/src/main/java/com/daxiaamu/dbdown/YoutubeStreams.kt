@@ -8,6 +8,19 @@ data class MediaSegment(val url: String, val start: Long = 0, val length: Long =
     val keyUrl: String? = null, val iv: String? = null)
 data class SegmentPlan(val segments: List<MediaSegment>, val identity: String)
 
+/** Bound ordinary HTTP requests too: YouTube may pace an unbounded audio response in real time. */
+internal fun youtubeHttpRangePlan(url: String, contentRange: String?): SegmentPlan? {
+    val match = Regex("bytes 0-0/([0-9]+)").matchEntire(contentRange.orEmpty()) ?: return null
+    val size = match.groupValues[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+    val chunk = 1024 * 1024L
+    val count = (size - 1) / chunk + 1
+    if(count > 100000) return null
+    return SegmentPlan(List(count.toInt()) { index ->
+        val start = index * chunk
+        MediaSegment(url, start, minOf(chunk, size - start))
+    }, "http-range:$size")
+}
+
 internal enum class YoutubeProtocol { HTTP, DASH, HLS }
 internal data class YoutubeStream(
     val url: String, val video: Boolean, val audio: Boolean, val mime: String,

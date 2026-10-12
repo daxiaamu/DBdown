@@ -58,9 +58,14 @@ object Links {
         if (host == "v.douyin.com" && Regex("^/[A-Za-z0-9_-]+/?$").matches(path)) {
             return VideoLink(Platform.DOUYIN, "https://v.douyin.com${path.trimEnd('/')}/", "douyin-short:${path.trimEnd('/')}")
         }
-        // Desktop featured pages identify the opened work in modal_id rather than the path.
+        // Search and featured pages identify the currently opened work in modal_id.
+        // A video prefix can refer to the previous work, so the modal takes precedence.
         if (host in setOf("douyin.com", "www.douyin.com", "m.douyin.com") &&
-            path in setOf("", "/", "/jingxuan", "/jingxuan/")) {
+            (path in setOf("", "/", "/jingxuan", "/jingxuan/") ||
+                Regex("^/search/[^/]+/?$").matches(path) ||
+                Regex("^/(video|note|slides)/[0-9]{8,22}(?:/search/[^/]+)?/?$").matches(path)) &&
+            (path in setOf("", "/", "/jingxuan", "/jingxuan/") ||
+                uri.rawQuery.orEmpty().split("&").any { URLDecoder.decode(it.substringBefore("="), "UTF-8") == "modal_id" })) {
             val ids = uri.rawQuery.orEmpty().split("&").mapNotNull { parameter ->
                 val pieces = parameter.split("=", limit = 2)
                 if (URLDecoder.decode(pieces[0], "UTF-8") == "modal_id" && pieces.size == 2)
