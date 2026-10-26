@@ -13,6 +13,11 @@ internal fun accountVerdict(platform: Platform, body: String): AccountStatus = r
     val json = JSONObject(body)
     val data = json.optJSONObject("data")
     when(platform) {
+        Platform.WECHAT -> when {
+            json.optString("userId").let { it.isNotBlank() && it != "0" && it != "null" && !it.startsWith("a_") } &&
+                !json.optBoolean("anonUser", false) -> AccountStatus.VALID
+            else -> AccountStatus.UNKNOWN
+        }
         Platform.WEIBO -> when {
             json.optInt("ok") == 1 && data?.opt("login") == true -> AccountStatus.VALID
             json.optInt("ok") == 1 && data?.opt("login") == false -> AccountStatus.EXPIRED

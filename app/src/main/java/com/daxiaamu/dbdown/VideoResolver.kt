@@ -15,7 +15,7 @@ data class VideoInfo(
     val video: String, val audio: String? = null, val quality: String = "",
     val referer: String, val userAgent: String, val images: List<String> = emptyList(),
     val music: String? = null, val videoFallbacks: List<String> = emptyList(), val resolution: String = "", val audioCodec: String = "", val imageVideos: List<String?> = emptyList(), val separateAlbumMusic: Boolean = false, val musicCandidates: List<String> = emptyList(),
-    val videoPlan: SegmentPlan? = null, val audioPlan: SegmentPlan? = null, val audioUserAgent: String? = null, val audioFallbacks: List<String> = emptyList(), val fps: Float = 0f, val specifications: MediaSpecifications? = null, val directVideoTracks: List<DirectVideoTrack> = emptyList()
+    val videoPlan: SegmentPlan? = null, val audioPlan: SegmentPlan? = null, val audioUserAgent: String? = null, val audioFallbacks: List<String> = emptyList(), val fps: Float = 0f, val specifications: MediaSpecifications? = null, val directVideoTracks: List<DirectVideoTrack> = emptyList(), val videoDecodeKey: String? = null
 )
 
 class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
@@ -29,6 +29,7 @@ class VideoResolver(private val trackCall: (okhttp3.Call) -> Unit = {}) {
         WebAccounts.refresh(true)
         val actual = expand(link)
         when(actual.platform) {
+            Platform.WECHAT -> WechatResolver(trackCall).resolve(actual, selection)
             Platform.YOUTUBE -> YoutubeResolver.resolve(actual, { coroutineContext.ensureActive() }, trackCall = trackCall, requested = selection)
             Platform.WEIBO -> WeiboResolver(trackCall) { coroutineContext.ensureActive() }.resolve(actual,selection)
             Platform.BILI -> bili(actual, selection)

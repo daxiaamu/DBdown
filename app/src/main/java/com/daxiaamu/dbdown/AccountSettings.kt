@@ -23,6 +23,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if(platform == Platform.BILI) "哔哩哔哩" else platform.label, style = MaterialTheme.typography.titleMedium)
+                        if(platform == Platform.WECHAT) Text("通过腾讯元宝网页登录获取播放信息", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text((statuses[platform] ?: AccountStatus.CHECKING).label,
                             style = MaterialTheme.typography.bodySmall, color = if(statuses[platform] == AccountStatus.EXPIRED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -44,7 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
     }
     if(confirmClear) AlertDialog(onDismissRequest = { confirmClear = false },
         title = { Text("清除网页登录？") },
-        text = { Text("退出本应用内的 B 站、抖音、YouTube 和微博 网页登录，清除本地网页 Cookie 和存储。手机上的官方应用不受影响。正在进行的下载不会重新解析资源。") },
+        text = { Text("退出本应用内所有平台的网页登录，包括微信视频号使用的腾讯元宝会话，清除本地网页 Cookie 和存储。手机上的官方应用不受影响。正在进行的下载不会重新解析资源。") },
         confirmButton = {
             TextButton(onClick = {
                 confirmClear = false; clearing = true

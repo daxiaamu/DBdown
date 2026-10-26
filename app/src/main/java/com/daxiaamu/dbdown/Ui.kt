@@ -361,7 +361,7 @@ private val paths = mapOf(
                 Text(when(filter) { 1 -> "没有正在下载的作品"; 2 -> "还没有下载完成的作品"; else -> "下载的作品会出现在这里" },
                     style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
-                Text("从 B 站、抖音、YouTube 或微博 分享视频开始", style = MaterialTheme.typography.bodyMedium,
+                Text("从 B 站、抖音、YouTube、微博或微信视频号分享视频开始", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
                 TextButton(onClick = { vm.openInput() }) { Text("添加链接") }
@@ -526,6 +526,16 @@ private val paths = mapOf(
                 Glyph("arrow")
             }
         }
+        Surface(shape = RoundedCornerShape(22.dp)) {
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f).padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("将下载时间设为图片拍摄时间", style = MaterialTheme.typography.titleMedium)
+                    Text("适用于之后下载的图片和实况图，覆盖原有拍摄时间，方便在相册中查找。不支持写入的格式仅设置相册时间。",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = vm.imageDownloadTime, onCheckedChange = vm::changeImageDownloadTime)
+            }
+        }
         AccountSettings()
         Text("链接与提醒", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Surface(shape = RoundedCornerShape(22.dp)) {
@@ -539,7 +549,7 @@ private val paths = mapOf(
                     Switch(checked = vm.clipboardEnabled, onCheckedChange = onClipboard)
                 }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Text("仅识别 B 站、抖音、YouTube 和微博 视频，每次重新复制都会提醒，同一次复制不重复提醒。普通文本与敏感内容不会保存。", style = MaterialTheme.typography.bodyMedium,
+                Text("仅识别 B 站、抖音、YouTube、微博和微信视频号视频，每次重新复制都会提醒，同一次复制不重复提醒。普通文本与敏感内容不会保存。", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

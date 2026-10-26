@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 18,
+  "policyRevision": 19,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.20: improve YouTube download speed and support Douyin search links"
+  "reason": "Publish 0.6.21: WeChat Channels downloads and image capture time setting"
 }

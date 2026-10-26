@@ -147,13 +147,18 @@ class DownloadService : Service() {
 
     private suspend fun downloadVideo(task: DownloadTask, info: VideoInfo, dir: File, progress: TaskTransferProgress) {
         val audioInfo=info.copy(userAgent=info.audioUserAgent ?: info.userAgent)
-        val video = File(dir, "video.mp4")
+        var video = File(dir, "video.mp4")
         if(info.videoPlan != null) downloadSegments(info.videoPlan, video, info, task.id, progress, "video")
         else downloadWithFallback(listOf(info.video) + info.videoFallbacks,
             refreshOnUnavailable = if(info.source.platform == Platform.DOUYIN && task.selection == null) {
                 { DouyinPage.desktopVideoUrls(DouyinDesktop.detail(info.id.removePrefix("dy:")), info.source) }
             } else null) { url ->
             download(url, video, info, task.id, progress, "video")
+        }
+        if(info.videoDecodeKey != null) {
+            state(task.id, TaskStatus.SAVING)
+            video = WechatCipher.decrypt(video, File(dir, "decoded.mp4"), info.videoDecodeKey)
+            currentCoroutineContext().ensureActive()
         }
         val output = if(info.audio != null) {
             val audio = File(dir, "audio.m4a")
@@ -182,6 +187,7 @@ class DownloadService : Service() {
     }
 
     private suspend fun downloadAlbum(task: DownloadTask, info: VideoInfo, dir: File, progress: TaskTransferProgress) {
+        val useDownloadTime = getSharedPreferences("settings", 0).getBoolean(IMAGE_DOWNLOAD_TIME, false)
         val published = mutableListOf<Uri>()
         try {
             for((index, url) in info.images.withIndex()) {
@@ -193,6 +199,7 @@ class DownloadService : Service() {
                 android.graphics.BitmapFactory.decodeFile(image.absolutePath, bounds)
                 check(bounds.outWidth > 0 && bounds.outHeight > 0) { "第 ${index + 1} 张图片无效" }
                 val motion = info.imageVideos.getOrNull(index)
+                val takenAt: Long?
                 val output: File
                 val mime: String
                 val extension: String
@@ -201,11 +208,13 @@ class DownloadService : Service() {
                     download(motion, video, info, task.id, progress, "motion:$index")
                     validateVideo(video)
                     state(task.id, TaskStatus.SAVING)
-                    val jpeg = if(bounds.outMimeType == "image/jpeg") image else File(dir, "slide-$index.jpg").also { file ->
+                    val cover = if(bounds.outMimeType == "image/jpeg") image else File(dir, "slide-$index.jpg").also { file ->
                         val bitmap = android.graphics.BitmapFactory.decodeFile(image.absolutePath) ?: error("Live 图封面无法解码")
                         try { file.outputStream().use { check(bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 100, it)) } }
                         finally { bitmap.recycle() }
                     }
+                    takenAt = if(useDownloadTime) System.currentTimeMillis() else null
+                    val jpeg = imageWithDownloadTime(cover, "image/jpeg", takenAt)
                     output = File(dir, "slide-$index-MP.jpg")
                     // Write EXIF before appending the video; later metadata rewrites can remove the trailer.
                     androidx.exifinterface.media.ExifInterface(jpeg).apply {
@@ -215,12 +224,13 @@ class DownloadService : Service() {
                     MotionPhoto.write(jpeg, video, output)
                     mime = "image/jpeg"; extension = "jpg"
                 } else {
-                    output = image
                     mime = bounds.outMimeType ?: error("图片格式无法识别")
+                    takenAt = if(useDownloadTime) System.currentTimeMillis() else null
+                    output = imageWithDownloadTime(image, mime, takenAt)
                     extension = when(mime) { "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; "image/heif", "image/heic" -> "heic"; "image/avif" -> "avif"; else -> error("暂不支持此静态图片格式") }
                 }
                 state(task.id, TaskStatus.SAVING)
-                published += publish(output, info.title, "${task.id.take(8)}-${index + 1}", mime, extension, image = true, motion = motion != null)
+                published += publish(output, info.title, "${task.id.take(8)}-${index + 1}", mime, extension, image = true, motion = motion != null, takenAt = takenAt)
             }
             info.music?.let { url ->
                 state(task.id, TaskStatus.DOWNLOADING)
@@ -351,13 +361,14 @@ class DownloadService : Service() {
             }) { "服务器返回的文件不是可播放视频" }
         } finally { extractor.release() }
     }
-    private suspend fun publish(file: File, title: String, id: String, mime: String = "video/mp4", extension: String = "mp4", image: Boolean = false, audio: Boolean = false, motion: Boolean = false): Uri {
+    private suspend fun publish(file: File, title: String, id: String, mime: String = "video/mp4", extension: String = "mp4", image: Boolean = false, audio: Boolean = false, motion: Boolean = false, takenAt: Long? = null): Uri {
         val clean = mediaBaseName(title)
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "$clean-${id.take(12)}${if(motion) "_MP" else ""}.$extension")
             put(MediaStore.Video.Media.MIME_TYPE, mime)
             put(MediaStore.Video.Media.RELATIVE_PATH, "${if(image) Environment.DIRECTORY_PICTURES else if(audio) Environment.DIRECTORY_MUSIC else Environment.DIRECTORY_MOVIES}/逗逼下载器")
             put(MediaStore.Video.Media.IS_PENDING, 1)
+            if(image && takenAt != null) put(MediaStore.Images.Media.DATE_TAKEN, takenAt)
         }
         val uri = contentResolver.insert(if(image) MediaStore.Images.Media.EXTERNAL_CONTENT_URI else if(audio) MediaStore.Audio.Media.EXTERNAL_CONTENT_URI else MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: error("无法创建视频文件")
         try {
@@ -374,6 +385,7 @@ class DownloadService : Service() {
             } ?: error("无法写入视频文件")
             currentCoroutineContext().ensureActive()
             values.clear(); values.put(MediaStore.Video.Media.IS_PENDING, 0)
+            if(image && takenAt != null) values.put(MediaStore.Images.Media.DATE_TAKEN, takenAt)
             check(contentResolver.update(uri, values, null, null) == 1) { "无法完成视频保存" }
             return uri
         } catch(e: Exception) {

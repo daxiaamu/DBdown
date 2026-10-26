@@ -42,6 +42,7 @@ object WebAccounts {
         refresh()
     }
     private fun url(platform: Platform) = when(platform) {
+        Platform.WECHAT -> "https://yuanbao.tencent.com/"
         Platform.WEIBO -> "https://m.weibo.cn/"
         Platform.BILI -> "https://www.bilibili.com/"
         Platform.DOUYIN -> "https://www.douyin.com/"
@@ -60,7 +61,13 @@ object WebAccounts {
         } }
     }
     private fun hasSession(platform: Platform, raw: String): Boolean {
+        if(platform == Platform.WECHAT) {
+            val cookies = raw.split(';').associate { it.trim().substringBefore('=') to it.substringAfter('=', "") }
+            val user = cookies["hy_user"].orEmpty()
+            return !cookies["hy_token"].isNullOrBlank() && user.isNotBlank() && !user.startsWith("a_")
+        }
         val names = when(platform) {
+            Platform.WECHAT -> setOf("hy_token")
             Platform.WEIBO -> setOf("SUB")
             Platform.BILI -> setOf("SESSDATA")
             Platform.DOUYIN -> setOf("sessionid", "sessionid_ss", "sid_guard")
@@ -89,6 +96,7 @@ object WebAccounts {
                     val wasExpired = prefs.getBoolean(platform.name + "_expired", false)
                     publish(platform, if(wasExpired) AccountStatus.EXPIRED else AccountStatus.CHECKING)
                     val endpoint = when(platform) {
+                        Platform.WECHAT -> "https://yuanbao.tencent.com/api/getuserinfo"
                         Platform.WEIBO -> "https://m.weibo.cn/api/config"
                         Platform.BILI -> "https://api.bilibili.com/x/web-interface/nav"
                         Platform.DOUYIN -> "https://www.douyin.com/aweme/v1/web/user/profile/self/?aid=6383&device_platform=webapp"
@@ -100,6 +108,7 @@ object WebAccounts {
                             .header("Referer", url(platform)).header("User-Agent", VideoResolver.DESKTOP).build())
                             .execute().use { response ->
                                 if(response.isSuccessful) accountVerdict(platform, response.body?.string().orEmpty())
+                                else if(platform == Platform.WECHAT && response.code == 401) AccountStatus.EXPIRED
                                 else AccountStatus.UNKNOWN
                             }
                     }.getOrDefault(AccountStatus.UNKNOWN)
@@ -163,7 +172,7 @@ object WebAccounts {
 }
 
 fun usesWebCookies(url: HttpUrl): Boolean = url.isHttps &&
-    listOf("bilibili.com", "douyin.com", "iesdouyin.com", "youtube.com", "weibo.com", "weibo.cn").any {
+    listOf("bilibili.com", "douyin.com", "iesdouyin.com", "youtube.com", "weibo.com", "weibo.cn", "yuanbao.tencent.com", "channels.weixin.qq.com").any {
         url.host == it || url.host.endsWith(".$it")
     }
 

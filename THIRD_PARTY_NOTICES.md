@@ -1,5 +1,7 @@
 # 开源许可与致谢
 
+微信视频号的腾讯元宝解析链路与 ISAAC-64 解码参考 [wx-video-channel-download](https://github.com/oliver-zch/wx-video-channel-download)，Kotlin 实现保留本地下载与断点续传流程。参考项目采用 MIT，版权属于 oliver；许可全文见 [MIT 许可](docs/licenses/wechat-reference-MIT.txt)。ISAAC-64 算法由 Bob Jenkins 设计。
+
 DBDown 采用 GNU GPL-3.0-or-later，完整条款见 LICENSE。
 
 YouTube 解析使用 [NewPipeExtractor v0.26.5](https://github.com/TeamNewPipe/NewPipeExtractor/tree/v0.26.5)，版权属于其贡献者，许可为 GPL-3.0-or-later。签名解析使用 Rhino（MPL-2.0），解析依赖包括 jsoup（MIT）、nanojson（MIT）和 Protocol Buffers（BSD-3-Clause）。这些依赖的源代码及许可由各自上游提供，构建版本固定于 Gradle 依赖。

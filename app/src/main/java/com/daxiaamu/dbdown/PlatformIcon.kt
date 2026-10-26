@@ -24,6 +24,14 @@ import androidx.compose.ui.unit.dp
     Canvas(modifier.size(22.dp).semantics { contentDescription = platform.label }) {
         scale(size.width / 24f, size.height / 24f, pivot = Offset.Zero) {
             when(platform) {
+                Platform.WECHAT -> {
+                    val green = Color(0xFF07C160)
+                    drawOval(green, Offset(1f, 3f), Size(15f, 12f))
+                    drawPath(Path().apply { moveTo(4f, 12f); lineTo(3f, 17f); lineTo(9f, 14f); close() }, green)
+                    drawOval(green, Offset(10f, 10f), Size(13f, 10f))
+                    drawPath(Path().apply { moveTo(18f, 18f); lineTo(22f, 22f); lineTo(21f, 17f); close() }, green)
+                    listOf(Offset(6f, 8f), Offset(11f, 8f), Offset(14f, 14f), Offset(19f, 14f)).forEach { drawCircle(Color.White, 0.8f, it) }
+                }
                 Platform.BILI -> {
                     val pink = Color(0xFFFB7299)
                     drawRoundRect(pink, Offset(2f, 6f), Size(20f, 15f), CornerRadius(3f), style = Stroke(2f))

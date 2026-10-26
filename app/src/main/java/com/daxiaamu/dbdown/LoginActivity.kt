@@ -25,6 +25,7 @@ class LoginActivity : ComponentActivity() {
     private val platform by lazy { Platform.accountPlatforms.firstOrNull { it.name == intent.getStringExtra("platform") } ?: Platform.BILI }
     private var enteredSignedIn = false
     private val startUrl get() = when(platform) {
+        Platform.WECHAT -> "https://yuanbao.tencent.com/"
         Platform.WEIBO -> if(enteredSignedIn) "https://m.weibo.cn/"
             else "https://passport.weibo.cn/signin/login?entry=mweibo&r=https%3A%2F%2Fm.weibo.cn%2F"
         Platform.BILI -> "https://passport.bilibili.com/h5-app/passport/login"
@@ -106,6 +107,7 @@ class LoginActivity : ComponentActivity() {
     private fun createBrowser(saved: Bundle?): WebView = WebView(this).apply {
         settings.apply {
             if(platform == Platform.DOUYIN && desktopFallback) userAgentString = VideoResolver.DESKTOP
+            if(platform == Platform.WECHAT) userAgentString = VideoResolver.DESKTOP
             javaScriptEnabled = true
             domStorageEnabled = true
             allowFileAccess = false
@@ -120,7 +122,7 @@ class LoginActivity : ComponentActivity() {
             builtInZoomControls = true
             displayZoomControls = false
         }
-        CookieManager.getInstance().setAcceptThirdPartyCookies(this, platform == Platform.WEIBO)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(this, platform in setOf(Platform.WEIBO, Platform.WECHAT))
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if(!request.isForMainFrame) return false

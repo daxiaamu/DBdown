@@ -21,6 +21,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val context get() = getApplication<DownloaderApp>()
     val store get() = context.store
     private val prefs = app.getSharedPreferences("settings", 0)
+    var imageDownloadTime by mutableStateOf(prefs.getBoolean(IMAGE_DOWNLOAD_TIME, false))
+        private set
+    fun changeImageDownloadTime(enabled: Boolean) {
+        imageDownloadTime = enabled
+        prefs.edit().putBoolean(IMAGE_DOWNLOAD_TIME, enabled).apply()
+    }
     var clipboardEnabled by mutableStateOf(prefs.getBoolean("clipboard", true))
         private set
     private val gate = PromptGate(prefs.getStringSet("handled", emptySet()).orEmpty().toMutableSet())
@@ -99,11 +105,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun onShare(text: String) {
         settings = false
         openInput(text)
-        if(Links.detect(text) == null) error = "没有识别到 B 站、抖音、YouTube 或微博 视频"
+        if(Links.detect(text) == null) error = "没有识别到 B 站、抖音、YouTube、微博或微信视频号视频"
     }
     fun submit(): Boolean {
         val link = Links.detect(input)
-        if(link == null) { error = "请粘贴 B 站、抖音、YouTube 或微博 链接，也支持分享文案、BV / AV 号和 YouTube 视频 ID"; return false }
+        if(link == null) { error = "请粘贴 B 站、抖音、YouTube、微博或微信视频号链接，也支持分享文案、BV / AV 号和 YouTube 视频 ID"; return false }
         val task = enqueue(link)
         if(!start(task.id)) { error = store.get(task.id)?.error; return false }
         inputVisible = false; tab = 1; settings = false
