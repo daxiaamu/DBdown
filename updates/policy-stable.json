@@ -1,6 +1,6 @@
 {
   "channel": "stable",
-  "policyRevision": 19,
+  "policyRevision": 20,
   "maxForcedVersionCode": 0,
-  "reason": "Publish 0.6.21: WeChat Channels downloads and image capture time setting"
+  "reason": "Publish 0.6.22: allow downloading while clipboard preview resolves"
 }

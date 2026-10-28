@@ -116,9 +116,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
     fun downloadSuggestion(): Boolean {
-        val info=(clipboardPrompt as? ClipboardPrompt.Ready)?.info ?: return false
-        clipboard.clear()
-        val task=enqueue(info.source,info)
+        val prompt=clipboardPrompt ?: return false
+        if(prompt is ClipboardPrompt.Failed) return false
+        val info=(prompt as? ClipboardPrompt.Ready)?.info
+        clipboard.dismiss()
+        val task=enqueue(info?.source ?: prompt.link,info)
+        if(info != null) context.prepareDownload(task.id,info)
         tab=1; settings=false
         return start(task.id)
     }

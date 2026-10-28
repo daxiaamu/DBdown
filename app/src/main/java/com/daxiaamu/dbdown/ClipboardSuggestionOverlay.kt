@@ -64,7 +64,7 @@ internal val avoidsSystemIsland: Boolean get() = Build.VERSION.SDK_INT >= 36 ||
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.End) {
                     TextButton(onClick=vm::dismissClipboard) { Text("忽略") }
                     Button(onClick={ if(failed) vm.retryClipboard() else if(vm.downloadSuggestion()) requestNotifications() },
-                        enabled=!resolving && (ready!=null || failed),shape=RoundedCornerShape(14.dp)) {
+                        shape=RoundedCornerShape(14.dp)) {
                         Text(if(failed) "重试" else "下载")
                     }
                 }
